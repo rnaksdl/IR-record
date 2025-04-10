@@ -16,15 +16,15 @@ if not os.path.exists(output_folder):
 # Initialize camera with focus on high frame rate
 picam2 = Picamera2()
 
-# Lower resolution but high frame rate configuration
+# Configuration with high frame rate using compatible format
 video_config = picam2.create_video_configuration(
-    main={"size": (640, 480), "format": "RGB888"},  # Lower resolution to support high FPS
+    main={"size": (640, 480)},  # Format will be automatically selected
     controls={"FrameRate": 60.0}  # Target 60fps for tracking fast IR signals
 )
 
 picam2.configure(video_config)
 
-# Optimized encoder settings (higher bitrate for high FPS)
+# Optimized encoder settings for high FPS
 encoder = H264Encoder(bitrate=4000000)  # 4 Mbps to handle the higher frame rate
 
 # Start the camera with preview
@@ -35,9 +35,9 @@ recording = False
 temp_filename = ""
 start_time = 0
 
-print("Flexible Recording System Ready (Optimized for high frame rate IR analysis)")
+print("IR Signal Analysis Recording System")
 print("Commands:")
-print("  1 - Start/Resume recording")
+print("  1 - Start recording")
 print("  2 - Stop recording")
 print("  3 - Quit")
 
