@@ -1,21 +1,26 @@
-import picamera
+#!/usr/bin/env python3
+
+from picamera2 import Picamera2
+from picamera2.encoders import H264Encoder
 import time
 import os
 from datetime import datetime
 
-# Initialize the camera
-camera = picamera.PiCamera()
-camera.resolution = (1920, 1080)  # Full HD resolution
-camera.framerate = 30
-
-recording = False
-segment_count = 0
+# Create output folder
 output_folder = "recordings"
-
-# Create output folder if it doesn't exist
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
 
+# Initialize camera
+picam2 = Picamera2()
+video_config = picam2.create_video_configuration()
+picam2.configure(video_config)
+encoder = H264Encoder()
+
+# Start the camera
+picam2.start()
+
+recording = False
 print("Flexible Recording System Ready")
 print("Commands:")
 print("  s - Start/Resume recording")
@@ -29,25 +34,23 @@ try:
         if command.lower() == 's' and not recording:
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{output_folder}/segment_{timestamp}.h264"
+            filename = f"{output_folder}/video_{timestamp}.h264"
             
             # Start recording
-            camera.start_recording(filename)
+            picam2.start_recording(encoder, filename)
             recording = True
-            segment_count += 1
-            print(f"Recording started (segment {segment_count})")
+            print(f"Recording started to {filename}")
             
         elif command.lower() == 'p' and recording:
             # Stop the current recording
-            camera.stop_recording()
+            picam2.stop_recording()
             recording = False
-            print("Recording paused")
+            print("Recording stopped")
             
         elif command.lower() == 'q':
             # Stop recording if active and exit
             if recording:
-                camera.stop_recording()
-                print("Recording stopped")
+                picam2.stop_recording()
             print("Exiting...")
             break
             
@@ -64,6 +67,6 @@ except KeyboardInterrupt:
 finally:
     # Clean up
     if recording:
-        camera.stop_recording()
-    camera.close()
+        picam2.stop_recording()
+    picam2.stop()
     print("Camera resources released")
