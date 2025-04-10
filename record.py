@@ -8,16 +8,29 @@ import os
 from datetime import datetime
 import shutil
 
-# Create output folder if it doesn't exist
+# Create output folder
 output_folder = "recordings"
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
 
-# Initialize camera
+# Initialize camera with optimized settings for smoother video
 picam2 = Picamera2()
-video_config = picam2.create_video_configuration(main={"size": (1920, 1080)}, display="main")
+
+# Lower resolution configuration (720p instead of 1080p)
+video_config = picam2.create_video_configuration(
+    main={"size": (1280, 720), "format": "RGB888"},
+    lores={"size": (640, 480), "format": "YUV420"},
+    display="lores",
+    encode="lores"
+)
+
+# Set specific framerate (30fps is usually smoother than higher rates)
+video_config["controls"]["FrameRate"] = 30.0 [[3]]
+
 picam2.configure(video_config)
-encoder = H264Encoder(bitrate=10000000)
+
+# Reduce bitrate for smoother encoding (2 Mbps instead of 10 Mbps)
+encoder = H264Encoder(bitrate=2000000)
 
 # Start the camera with preview
 picam2.start_preview(True)
@@ -27,7 +40,7 @@ recording = False
 temp_filename = ""
 start_time = 0
 
-print("Recording System Ready")
+print("Flexible Recording System Ready (Optimized for smooth recording)")
 print("Commands:")
 print("  s - Start/Resume recording")
 print("  p - Pause recording")
@@ -39,8 +52,6 @@ try:
         
         if command.lower() == 's' and not recording:
             # Use a temporary filename during recording
-            now = datetime.now()
-            date_part = now.strftime("%y%m%d")
             temp_filename = f"{output_folder}/temp_recording.h264"
             
             # Start recording (preview continues)
@@ -58,8 +69,7 @@ try:
             duration = round(time.time() - start_time)
             
             # Create the final filename with date and length
-            now = datetime.now()
-            date_part = now.strftime("%y%m%d")
+            date_part = datetime.now().strftime("%y%m%d")
             final_filename = f"{output_folder}/{date_part}_{duration}.h264"
             
             # Rename the file
@@ -74,7 +84,7 @@ try:
                 date_part = datetime.now().strftime("%y%m%d")
                 final_filename = f"{output_folder}/{date_part}_{duration}.h264"
                 shutil.move(temp_filename, final_filename)
-                print(f"Recording stopped. Saved as {final_filename}")
+                print(f"Recording saved as {final_filename}")
             print("Exiting...")
             break
             
