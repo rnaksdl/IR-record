@@ -72,21 +72,36 @@ try:
             recording = False
             stop_thread = True  # Signal thread to stop
             
-            duration = round(time.time() - start_time)
-            date_part = datetime.now().strftime("%y%m%d")
-            final_filename = f"{output_folder}/{date_part}_{duration}.h264"
+            # Format duration as seconds_tenths with 's' suffix
+            actual_duration = time.time() - start_time
+            seconds = int(actual_duration)
+            tenths = int((actual_duration - seconds) * 10)
+            duration_str = f"{seconds}_{tenths}s"
+            
+            # Format filename with date_time
+            timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
+            final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
+            
             shutil.move(temp_filename, final_filename)
             print(f"Saved as {final_filename}")
             
         elif command == "3":
             if recording:
+                sys.stdout.write("\n")
                 picam2.stop_recording()
                 recording = False
                 stop_thread = True
                 
-                duration = round(time.time() - start_time)
-                date_part = datetime.now().strftime("%y%m%d")
-                final_filename = f"{output_folder}/{date_part}_{duration}.h264"
+                # Format duration as seconds_tenths with 's' suffix
+                actual_duration = time.time() - start_time
+                seconds = int(actual_duration)
+                tenths = int((actual_duration - seconds) * 10)
+                duration_str = f"{seconds}_{tenths}s"
+                
+                # Format filename with date_time
+                timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
+                final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
+                
                 shutil.move(temp_filename, final_filename)
                 print(f"Recording saved as {final_filename}")
             print("Exiting...")
@@ -104,10 +119,19 @@ except KeyboardInterrupt:
     print("\nProgram interrupted")
 finally:
     if recording:
+        sys.stdout.write("\n")
         picam2.stop_recording()
-        duration = round(time.time() - start_time)
-        date_part = datetime.now().strftime("%y%m%d")
-        final_filename = f"{output_folder}/{date_part}_{duration}.h264"
+        
+        # Format duration as seconds_tenths with 's' suffix
+        actual_duration = time.time() - start_time
+        seconds = int(actual_duration)
+        tenths = int((actual_duration - seconds) * 10)
+        duration_str = f"{seconds}_{tenths}s"
+        
+        # Format filename with date_time
+        timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
+        final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
+        
         shutil.move(temp_filename, final_filename)
         print(f"Recording saved as {final_filename}")
     picam2.stop_preview()
