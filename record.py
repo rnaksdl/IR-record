@@ -40,7 +40,7 @@ stop_thread = False  # Flag to stop the duration thread
 def display_duration():
     while recording and not stop_thread:
         elapsed = time.time() - start_time
-        sys.stdout.write(f"\rRecording duration: {elapsed:.1f}s")
+        sys.stdout.write(f"\rRecording duration: {elapsed:.1f}s\n\n")
         sys.stdout.flush()
         time.sleep(0.1)
     sys.stdout.write("\n")  # Move to next line after recording stops
