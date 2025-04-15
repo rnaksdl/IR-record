@@ -3,7 +3,7 @@
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
-from libcamera import Transform  # NEW IMPORT
+from libcamera import Transform
 import time
 import os
 from datetime import datetime
@@ -17,23 +17,15 @@ if not os.path.exists(output_folder):
 # Initialize camera with focus on high frame rate
 picam2 = Picamera2()
 
-# Configuration with high frame rate using compatible format
+# Configuration with horizontal flip and high frame rate
 video_config = picam2.create_video_configuration(
-    main={"size": (640, 480)},  # Format will be automatically selected
-    controls={"FrameRate": 60.0},  # Target 60fps for tracking fast IR signals
-    transform=Transform(hflip=1)  # MIRROR EFFECT ADDED HERE [[9]]
-
+    main={"size": (640, 480)},
+    controls={"FrameRate": 60.0},
+    transform=Transform(hflip=1)
 )
-
 picam2.configure(video_config)
 
-# Optimized encoder settings for high FPS
-encoder = H264Encoder(bitrate=4000000)  # 4 Mbps to handle the higher frame rate
-
-# Start the camera with preview
-picam2.start_preview(True)
-picam2.start()
-
+encoder = H264Encoder(bitrate=4000000)
 recording = False
 temp_filename = ""
 start_time = 0
@@ -46,43 +38,40 @@ print("  3 - Quit")
 
 try:
     while True:
-        command = input("> ")
+        # Show recording duration in prompt if active
+        if recording:
+            elapsed = time.time() - start_time
+            command = input(f"[Recording: {elapsed:.1f}s] > ")
+        else:
+            command = input("> ")
         
         if command == "1" and not recording:
-            # Use a temporary filename during recording
             temp_filename = f"{output_folder}/temp_recording.h264"
-            
-            # Start recording (preview continues)
             picam2.start_recording(encoder, FileOutput(temp_filename))
             recording = True
             start_time = time.time()
-            print(f"Recording started...")
+            print(f"Recording started at {datetime.now().strftime('%H:%M:%S')}")
             
         elif command == "2" and recording:
-            # Stop the current recording
             picam2.stop_recording()
+            actual_duration = time.time() - start_time
             recording = False
             
-            # Calculate recording length in seconds (rounded)
-            duration = round(time.time() - start_time)
-            
-            # Create the final filename with date and length
+            duration = round(actual_duration)
             date_part = datetime.now().strftime("%y%m%d")
             final_filename = f"{output_folder}/{date_part}_{duration}.h264"
-            
-            # Rename the file
             shutil.move(temp_filename, final_filename)
-            print(f"Recording stopped. Saved as {final_filename}")
+            print(f"\nRecording stopped after {actual_duration:.1f} seconds. Saved as {final_filename}")
             
         elif command == "3":
-            # Stop recording if active and exit
             if recording:
+                actual_duration = time.time() - start_time
+                duration = round(actual_duration)
                 picam2.stop_recording()
-                duration = round(time.time() - start_time)
                 date_part = datetime.now().strftime("%y%m%d")
                 final_filename = f"{output_folder}/{date_part}_{duration}.h264"
                 shutil.move(temp_filename, final_filename)
-                print(f"Recording saved as {final_filename}")
+                print(f"\nRecording stopped after {actual_duration:.1f} seconds. Saved as {final_filename}")
             print("Exiting...")
             break
             
@@ -93,18 +82,18 @@ try:
                 print("Not currently recording")
             else:
                 print("Unknown command")
-                
+
 except KeyboardInterrupt:
     print("\nProgram interrupted")
 finally:
-    # Clean up
     if recording:
+        actual_duration = time.time() - start_time
+        duration = round(actual_duration)
         picam2.stop_recording()
-        duration = round(time.time() - start_time)
         date_part = datetime.now().strftime("%y%m%d")
         final_filename = f"{output_folder}/{date_part}_{duration}.h264"
         shutil.move(temp_filename, final_filename)
-        print(f"Recording saved as {final_filename}")
+        print(f"\nRecording stopped after {actual_duration:.1f} seconds. Saved as {final_filename}")
     picam2.stop_preview()
     picam2.stop()
     print("Camera resources released")
