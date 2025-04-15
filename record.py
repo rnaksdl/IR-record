@@ -43,7 +43,6 @@ def display_duration():
         sys.stdout.write(f"\rRecording duration: {elapsed:.1f}s")
         sys.stdout.flush()
         time.sleep(0.1)
-    sys.stdout.write("\n")  # Move to next line after recording stops
 
 print("IR Signal Analysis Recording System")
 print("Commands:")
@@ -68,6 +67,7 @@ try:
             duration_thread.start()
             
         elif command == "2" and recording:
+            sys.stdout.write("\n")
             picam2.stop_recording()
             recording = False
             stop_thread = True  # Signal thread to stop
@@ -76,7 +76,7 @@ try:
             date_part = datetime.now().strftime("%y%m%d")
             final_filename = f"{output_folder}/{date_part}_{duration}.h264"
             shutil.move(temp_filename, final_filename)
-            print(f"Recording stopped. Duration: {duration}s. Saved as {final_filename}")
+            print(f"Saved as {final_filename}")
             
         elif command == "3":
             if recording:
