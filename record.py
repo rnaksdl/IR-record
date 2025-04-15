@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 import shutil
 import threading
+import sys
 
 # Create output folder
 output_folder = "recordings"
@@ -35,13 +36,14 @@ temp_filename = ""
 start_time = 0
 stop_thread = False  # Flag to stop the duration thread
 
-# Function to display recording duration
+# Function to display recording duration in terminal
 def display_duration():
     while recording and not stop_thread:
         elapsed = time.time() - start_time
-        print(f"\rRecording duration: {elapsed:.1f}s", end='', flush=True)
-        time.sleep(0.5)
-    print()  # Move to next line after recording stops
+        sys.stdout.write(f"\rRecording duration: {elapsed:.1f}s")
+        sys.stdout.flush()
+        time.sleep(0.1)
+    sys.stdout.write("\n")  # Move to next line after recording stops
 
 print("IR Signal Analysis Recording System")
 print("Commands:")
