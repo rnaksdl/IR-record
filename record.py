@@ -38,15 +38,12 @@ stop_thread = False  # Flag to stop the duration thread
 
 # Function to display recording duration in terminal
 def display_duration():
-    # Only update the current line, no newlines
     while recording and not stop_thread:
         elapsed = time.time() - start_time
         sys.stdout.write(f"\rRecording duration: {elapsed:.1f}s")
         sys.stdout.flush()
         time.sleep(0.1)
-    # When done, add a newline so the prompt appears on a new line
-    sys.stdout.write("\n")
-    sys.stdout.flush()
+    sys.stdout.write("\n")  # Move to next line after recording stops
 
 print("IR Signal Analysis Recording System")
 print("Commands:")
