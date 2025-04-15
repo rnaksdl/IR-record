@@ -20,6 +20,8 @@ picam2 = Picamera2()
 video_config = picam2.create_video_configuration(
     main={"size": (640, 480)},  # Format will be automatically selected
     controls={"FrameRate": 60.0}  # Target 60fps for tracking fast IR signals
+    transform=Transform(hflip=1)  # MIRROR EFFECT ADDED HERE [[9]]
+
 )
 
 picam2.configure(video_config)
