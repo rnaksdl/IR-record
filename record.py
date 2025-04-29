@@ -14,61 +14,32 @@ from libcamera import Transform
 # --- System Optimizations ---
 def optimize_system():
     try:
-        # Set process to highest priority (requires root)
         os.nice(-20)
     except Exception as e:
         print(f"Warning: Could not set process priority: {e}")
 
-    # Try to set CPU governor to performance
     try:
         os.system("echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor")
     except Exception as e:
         print(f"Warning: Could not set CPU governor: {e}")
 
-    # Increase system buffer size for video
     os.system('sysctl -w net.core.rmem_max=12582912')
     os.system('sysctl -w net.core.wmem_max=12582912')
 
-    # Optional: Set GPU memory (requires reboot to take effect)
-    # os.system('vcgencmd set_mem gpu 256')
-
 # --- Camera Configuration ---
-def get_fastest_mode(picam2):
-    # Try to select the fastest available sensor mode
-    modes = picam2.sensor_modes
-    best_mode = None
-    max_fps = 0
-    for mode in modes:
-        if mode['size'][0] <= 640 and mode['size'][1] <= 480 and mode['format'] == 'RGB888':
-            if mode['fps'] > max_fps:
-                max_fps = mode['fps']
-                best_mode = mode
-    return best_mode
-
 def configure_camera():
     picam2 = Picamera2()
-    fastest_mode = get_fastest_mode(picam2)
-    if fastest_mode:
-        print(f"Using sensor mode: {fastest_mode}")
-        video_config = picam2.create_video_configuration(
+    video_config = picam2.create_video_configuration(
         main={"size": (640, 480), "format": "YUV420"},
-        controls={"FrameRate": 60.0},
+        controls={
+            "FrameRate": 60.0,
+            "NoiseReductionMode": 0,
+            "AwbEnable": 0,
+            "AeEnable": 0,
+        },
+        buffer_count=4,
         transform=Transform(hflip=1)
     )
-    else:
-        print("Fastest mode not found, using default 640x480@60fps")
-        video_config = picam2.create_video_configuration(
-            main={"size": (640, 480), "format": "RGB888"},
-            controls={
-                "FrameRate": 60.0,
-                "FrameDurationLimits": (16666, 16666),
-                "NoiseReductionMode": 0,
-                "AwbEnable": 0,
-                "AeEnable": 0,
-            },
-            buffer_count=4,
-            transform=Transform(hflip=1)
-        )
     picam2.configure(video_config)
     return picam2
 
