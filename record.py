@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
@@ -8,7 +10,9 @@ from datetime import datetime
 import shutil
 import threading
 import sys
+import subprocess
 
+# Create output folder
 output_folder = "recordings"
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
@@ -20,18 +24,15 @@ print("Available sensor modes:")
 for idx, mode in enumerate(picam2.sensor_modes):
     print(f"Mode {idx}: {mode}")
 
-# Set your desired resolution and frame rate to match a supported mode
+# Set 1080p60 configuration (if supported by your camera)
 video_config = picam2.create_video_configuration(
-    main={"size": (640, 480)},
-    controls={"FrameRate": 60.0},  # or 90.0 if supported
+    main={"size": (1920, 1080)},
+    controls={"FrameRate": 60.0},
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
 
-# Print the actual configuration chosen
-print("Configured mode:", picam2.camera_config)
-
-encoder = H264Encoder(bitrate=4000000)
+encoder = H264Encoder(bitrate=10000000)  # Higher bitrate for 1080p
 
 picam2.start_preview(True)
 picam2.start()
@@ -48,7 +49,22 @@ def display_duration():
         sys.stdout.flush()
         time.sleep(0.1)
 
-print("IR Signal Analysis Recording System (Global Shutter, Preview ON)")
+def convert_to_mp4(h264_path, mp4_path, fps=60):
+    print(f"Converting {h264_path} to {mp4_path} using ffmpeg...")
+    # -y: overwrite, -framerate: input fps, -c copy: no re-encode
+    cmd = [
+        "ffmpeg", "-y", "-framerate", str(fps),
+        "-i", h264_path,
+        "-c", "copy",
+        mp4_path
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"Conversion complete: {mp4_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"ffmpeg conversion failed: {e}")
+
+print("IR Signal Analysis Recording System (1080p60, Preview ON)")
 print("Commands:")
 print("  1 - Start recording")
 print("  2 - Stop recording")
@@ -82,9 +98,13 @@ try:
             
             timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
             final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
+            final_mp4 = f"{output_folder}/{timestamp}_{duration_str}.mp4"
             
             shutil.move(temp_filename, final_filename)
             print(f"Saved as {final_filename}")
+
+            # Convert to mp4
+            convert_to_mp4(final_filename, final_mp4, fps=60)
             
         elif command == "3":
             if recording:
@@ -100,9 +120,13 @@ try:
                 
                 timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
                 final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
+                final_mp4 = f"{output_folder}/{timestamp}_{duration_str}.mp4"
                 
                 shutil.move(temp_filename, final_filename)
                 print(f"Recording saved as {final_filename}")
+
+                # Convert to mp4
+                convert_to_mp4(final_filename, final_mp4, fps=60)
             print("Exiting...")
             break
             
@@ -128,9 +152,13 @@ finally:
         
         timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
         final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
+        final_mp4 = f"{output_folder}/{timestamp}_{duration_str}.mp4"
         
         shutil.move(temp_filename, final_filename)
         print(f"Recording saved as {final_filename}")
+
+        # Convert to mp4
+        convert_to_mp4(final_filename, final_mp4, fps=60)
     picam2.stop_preview()
     picam2.stop()
     print("Camera resources released")
