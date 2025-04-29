@@ -16,23 +16,27 @@ output_folder = "recordings"
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
 
-# Initialize camera with high frame rate and mirrored preview
 picam2 = Picamera2()
 
-# Print available sensor modes for reference (uncomment to check)
-# print("Available sensor modes:", picam2.sensor_modes)
+# Print available sensor modes for reference
+print("Available sensor modes:")
+for idx, mode in enumerate(picam2.sensor_modes):
+    print(f"Mode {idx}: {mode}")
 
-# For GS camera, use the correct sensor mode for 640x480@60fps or higher
+# === IMPORTANT ===
+# After running once, set the correct mode index below:
+SENSOR_MODE_INDEX = 0  # <-- Change this to the correct index for 640x480@60fps or higher
+
 video_config = picam2.create_video_configuration(
     main={"size": (640, 480)},
-    controls={"FrameRate": 60.0},  # Try 90.0 if your GS camera supports it
+    sensor={"mode": SENSOR_MODE_INDEX},
+    controls={"FrameRate": 60.0},  # Or 90.0 if your mode supports it
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
 
 encoder = H264Encoder(bitrate=4000000)
 
-# Start the camera with preview
 picam2.start_preview(True)
 picam2.start()
 
@@ -41,7 +45,6 @@ temp_filename = ""
 start_time = 0
 stop_thread = False  # Flag to stop the duration thread
 
-# Function to display recording duration in terminal
 def display_duration():
     while recording and not stop_thread:
         elapsed = time.time() - start_time
@@ -67,7 +70,6 @@ try:
             start_time = time.time()
             print("Recording started...")
 
-            # Start duration display thread
             duration_thread = threading.Thread(target=display_duration, daemon=True)
             duration_thread.start()
             
@@ -77,13 +79,11 @@ try:
             recording = False
             stop_thread = True  # Signal thread to stop
             
-            # Format duration as seconds_tenths with 's' suffix
             actual_duration = time.time() - start_time
             seconds = int(actual_duration)
             tenths = int((actual_duration - seconds) * 10)
             duration_str = f"{seconds}_{tenths}s"
             
-            # Format filename with date_time
             timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
             final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
             
@@ -97,13 +97,11 @@ try:
                 recording = False
                 stop_thread = True
                 
-                # Format duration as seconds_tenths with 's' suffix
                 actual_duration = time.time() - start_time
                 seconds = int(actual_duration)
                 tenths = int((actual_duration - seconds) * 10)
                 duration_str = f"{seconds}_{tenths}s"
                 
-                # Format filename with date_time
                 timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
                 final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
                 
@@ -127,13 +125,11 @@ finally:
         sys.stdout.write("\n")
         picam2.stop_recording()
         
-        # Format duration as seconds_tenths with 's' suffix
         actual_duration = time.time() - start_time
         seconds = int(actual_duration)
         tenths = int((actual_duration - seconds) * 10)
         duration_str = f"{seconds}_{tenths}s"
         
-        # Format filename with date_time
         timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
         final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
         
