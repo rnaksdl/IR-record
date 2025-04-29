@@ -30,7 +30,7 @@ encoder = H264Encoder(bitrate=2000000)
 # Do NOT start preview
 # picam2.start_preview(True)  # Comment this out
 picam2.start()
-print("Actual FPS:", picam2.capture_metadata()['FrameRate'])
+
 
 
 recording = False
