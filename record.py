@@ -11,7 +11,6 @@ from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
 from libcamera import Transform
 
-# --- System Optimizations ---
 def optimize_system():
     try:
         os.nice(-20)
@@ -26,7 +25,6 @@ def optimize_system():
     os.system('sysctl -w net.core.rmem_max=12582912')
     os.system('sysctl -w net.core.wmem_max=12582912')
 
-# --- Camera Configuration ---
 def configure_camera():
     picam2 = Picamera2()
     video_config = picam2.create_video_configuration(
@@ -43,7 +41,6 @@ def configure_camera():
     picam2.configure(video_config)
     return picam2
 
-# --- Encoder Configuration ---
 def configure_encoder():
     encoder = H264Encoder(
         bitrate=4000000,
@@ -53,7 +50,6 @@ def configure_encoder():
     )
     return encoder
 
-# --- Main Script ---
 def main():
     optimize_system()
 
@@ -91,9 +87,9 @@ def main():
 
             if command == "1" and not recording:
                 temp_filename = f"{output_folder}/temp_recording.h264"
-                os.sync()
-                os.system('sync; echo 3 > /proc/sys/vm/drop_caches')
-                picam2.start_recording(encoder, FileOutput(temp_filename, threads=4))
+                # If you want to clear caches, uncomment the next line and run as sudo
+                # os.system('sync; echo 3 | sudo tee /proc/sys/vm/drop_caches')
+                picam2.start_recording(encoder, FileOutput(temp_filename))
                 recording = True
                 stop_thread = False
                 start_time = time.time()
