@@ -16,7 +16,7 @@ import subprocess
 output_folder = "recordings"
 record_width = 1440
 record_height = 1080
-record_fps = 47.0  # Max for this mode on Pi Camera V2
+record_fps = 30.0  # Standard, universally compatible
 bitrate = 10000000
 
 if not os.path.exists(output_folder):
