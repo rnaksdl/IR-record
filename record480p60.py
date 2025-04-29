@@ -16,7 +16,7 @@ import subprocess
 output_folder = "recordings"
 record_width = 640
 record_height = 480
-record_fps = 120.0  # High-speed mode
+record_fps = 60.0  # Standard, QuickTime-compatible
 bitrate = 10000000
 
 if not os.path.exists(output_folder):
