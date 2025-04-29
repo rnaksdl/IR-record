@@ -26,8 +26,8 @@ for idx, mode in enumerate(picam2.sensor_modes):
 
 # Use 1080p47 (1920x1080 at 47 FPS), the highest supported 16:9 mode
 video_config = picam2.create_video_configuration(
-    main={"size": (1920, 1080)},
-    controls={"FrameRate": 47.0},
+    main={"size": (1640, 1232)},
+    controls={"FrameRate": 60.0},
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
