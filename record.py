@@ -12,8 +12,13 @@ import threading
 import sys
 import subprocess
 
-# Create output folder
+# Settings
 output_folder = "recordings"
+record_width = 1440
+record_height = 1080
+record_fps = 47.0  # Max for this mode on Pi Camera V2
+bitrate = 10000000
+
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
 
@@ -24,15 +29,14 @@ print("Available sensor modes:")
 for idx, mode in enumerate(picam2.sensor_modes):
     print(f"Mode {idx}: {mode}")
 
-# Use 1080p47 (1920x1080 at 47 FPS), the highest supported 16:9 mode
 video_config = picam2.create_video_configuration(
-    main={"size": (1640, 1232)},
-    controls={"FrameRate": 60.0},
+    main={"size": (record_width, record_height)},
+    controls={"FrameRate": record_fps},
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
 
-encoder = H264Encoder(bitrate=10000000)  # Higher bitrate for 1080p
+encoder = H264Encoder(bitrate=bitrate)
 
 picam2.start_preview(True)
 picam2.start()
@@ -49,8 +53,8 @@ def display_duration():
         sys.stdout.flush()
         time.sleep(0.1)
 
-def convert_to_mp4(h264_path, mp4_path, fps=47):
-    print(f"Converting {h264_path} to {mp4_path} using ffmpeg...")
+def convert_to_mp4(h264_path, mp4_path, fps):
+    print(f"Converting {h264_path} to {mp4_path} using ffmpeg at {fps} FPS...")
     cmd = [
         "ffmpeg", "-y", "-framerate", str(fps),
         "-i", h264_path,
@@ -63,7 +67,7 @@ def convert_to_mp4(h264_path, mp4_path, fps=47):
     except subprocess.CalledProcessError as e:
         print(f"ffmpeg conversion failed: {e}")
 
-print("IR Signal Analysis Recording System (1080p47, Preview ON)")
+print(f"IR Signal Analysis Recording System ({record_width}x{record_height}@{int(record_fps)}fps, Preview ON)")
 print("Commands:")
 print("  1 - Start recording")
 print("  2 - Stop recording")
@@ -102,8 +106,8 @@ try:
             shutil.move(temp_filename, final_filename)
             print(f"Saved as {final_filename}")
 
-            # Convert to mp4
-            convert_to_mp4(final_filename, final_mp4, fps=47)
+            # Convert to mp4 with correct FPS
+            convert_to_mp4(final_filename, final_mp4, fps=record_fps)
             
         elif command == "3":
             if recording:
@@ -124,8 +128,8 @@ try:
                 shutil.move(temp_filename, final_filename)
                 print(f"Recording saved as {final_filename}")
 
-                # Convert to mp4
-                convert_to_mp4(final_filename, final_mp4, fps=47)
+                # Convert to mp4 with correct FPS
+                convert_to_mp4(final_filename, final_mp4, fps=record_fps)
             print("Exiting...")
             break
             
@@ -156,8 +160,8 @@ finally:
         shutil.move(temp_filename, final_filename)
         print(f"Recording saved as {final_filename}")
 
-        # Convert to mp4
-        convert_to_mp4(final_filename, final_mp4, fps=47)
+        # Convert to mp4 with correct FPS
+        convert_to_mp4(final_filename, final_mp4, fps=record_fps)
     picam2.stop_preview()
     picam2.stop()
     print("Camera resources released")
