@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput
@@ -11,7 +9,6 @@ import shutil
 import threading
 import sys
 
-# Create output folder
 output_folder = "recordings"
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
@@ -23,17 +20,16 @@ print("Available sensor modes:")
 for idx, mode in enumerate(picam2.sensor_modes):
     print(f"Mode {idx}: {mode}")
 
-# === IMPORTANT ===
-# After running once, set the correct mode index below:
-SENSOR_MODE_INDEX = 0  # <-- Change this to the correct index for 640x480@60fps or higher
-
+# Set your desired resolution and frame rate to match a supported mode
 video_config = picam2.create_video_configuration(
     main={"size": (640, 480)},
-    sensor={"mode": SENSOR_MODE_INDEX},
-    controls={"FrameRate": 60.0},  # Or 90.0 if your mode supports it
+    controls={"FrameRate": 60.0},  # or 90.0 if supported
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
+
+# Print the actual configuration chosen
+print("Configured mode:", picam2.camera_config)
 
 encoder = H264Encoder(bitrate=4000000)
 
@@ -43,7 +39,7 @@ picam2.start()
 recording = False
 temp_filename = ""
 start_time = 0
-stop_thread = False  # Flag to stop the duration thread
+stop_thread = False
 
 def display_duration():
     while recording and not stop_thread:
@@ -77,7 +73,7 @@ try:
             sys.stdout.write("\n")
             picam2.stop_recording()
             recording = False
-            stop_thread = True  # Signal thread to stop
+            stop_thread = True
             
             actual_duration = time.time() - start_time
             seconds = int(actual_duration)
