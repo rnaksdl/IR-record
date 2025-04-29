@@ -18,6 +18,7 @@ if not os.path.exists(output_folder):
 
 # Initialize camera with high frame rate and mirrored preview
 picam2 = Picamera2()
+print(picam2.sensor_modes)  # Print available modes
 
 video_config = picam2.create_video_configuration(
     main={"size": (320, 240)},  # Lower resolution for stability
@@ -29,6 +30,7 @@ encoder = H264Encoder(bitrate=2000000)
 # Do NOT start preview
 # picam2.start_preview(True)  # Comment this out
 picam2.start()
+print("Actual FPS:", picam2.capture_metadata()['FrameRate'])
 
 
 recording = False
