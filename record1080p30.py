@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 
 from picamera2 import Picamera2
@@ -16,16 +17,8 @@ import subprocess
 output_folder = "recordings"
 record_width = 1440
 record_height = 1080
-record_fps = 30.0
+record_fps = 30.0  # Standard, universally compatible
 bitrate = 10000000
-
-# Anti-flicker settings (microseconds)
-# For 60Hz lighting (US/Canada): 16667 (1/60s), 33333 (1/30s)
-# For 50Hz lighting (Europe/UK): 20000 (1/50s), 40000 (1/25s)
-exposure_time_60hz = 16667  # 1/60s in microseconds
-exposure_time_50hz = 20000  # 1/50s in microseconds
-exposure_time = exposure_time_60hz  # Default to 60Hz
-analogue_gain = 4.0  # Default gain, adjust as needed
 
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
@@ -39,12 +32,7 @@ for idx, mode in enumerate(picam2.sensor_modes):
 
 video_config = picam2.create_video_configuration(
     main={"size": (record_width, record_height)},
-    controls={
-        "FrameRate": record_fps,
-        "ExposureTime": exposure_time,
-        "AnalogueGain": analogue_gain,
-        "AeEnable": False  # Disable auto exposure for consistent results
-    },
+    controls={"FrameRate": record_fps},
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
@@ -80,25 +68,11 @@ def convert_to_mp4(h264_path, mp4_path, fps):
     except subprocess.CalledProcessError as e:
         print(f"ffmpeg conversion failed: {e}")
 
-def set_exposure_settings(exposure_us, gain):
-    picam2.set_controls({
-        "ExposureTime": exposure_us,
-        "AnalogueGain": gain
-    })
-    print(f"Exposure settings updated: ExposureTime={exposure_us}μs (1/{1000000/exposure_us:.1f}s), AnalogueGain={gain}x")
-
 print(f"IR Signal Analysis Recording System ({record_width}x{record_height}@{int(record_fps)}fps, Preview ON)")
-print("Anti-flicker settings:")
-print(f"  ExposureTime: {exposure_time}μs (1/{1000000/exposure_time:.1f}s)")
-print(f"  AnalogueGain: {analogue_gain}x")
 print("Commands:")
 print("  1 - Start recording")
 print("  2 - Stop recording")
-print("  3 - Set exposure for 60Hz lighting (1/60s)")
-print("  4 - Set exposure for 50Hz lighting (1/50s)")
-print("  5 - Increase gain (+0.5)")
-print("  6 - Decrease gain (-0.5)")
-print("  7 - Quit")
+print("  3 - Quit")
 
 try:
     while True:
@@ -135,31 +109,8 @@ try:
 
             # Convert to mp4 with correct FPS
             convert_to_mp4(final_filename, final_mp4, fps=record_fps)
-
-        elif command == "3" and not recording:
-            # Set exposure for 60Hz lighting (1/60s)
-            exposure_time = exposure_time_60hz
-            set_exposure_settings(exposure_time, analogue_gain)
             
-        elif command == "4" and not recording:
-            # Set exposure for 50Hz lighting (1/50s)
-            exposure_time = exposure_time_50hz
-            set_exposure_settings(exposure_time, analogue_gain)
-            
-        elif command == "5" and not recording:
-            # Increase gain
-            analogue_gain += 0.5
-            set_exposure_settings(exposure_time, analogue_gain)
-            
-        elif command == "6" and not recording:
-            # Decrease gain
-            if analogue_gain > 0.5:
-                analogue_gain -= 0.5
-                set_exposure_settings(exposure_time, analogue_gain)
-            else:
-                print("Gain already at minimum")
-            
-        elif command == "7":
+        elif command == "3":
             if recording:
                 sys.stdout.write("\n")
                 picam2.stop_recording()
@@ -188,8 +139,6 @@ try:
                 print("Already recording")
             elif command == "2" and not recording:
                 print("Not currently recording")
-            elif command in ["3", "4", "5", "6"] and recording:
-                print("Cannot change exposure settings during recording")
             else:
                 print("Unknown command")
                 
@@ -217,3 +166,4 @@ finally:
     picam2.stop_preview()
     picam2.stop()
     print("Camera resources released")
+
