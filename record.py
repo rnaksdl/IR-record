@@ -24,10 +24,10 @@ print("Available sensor modes:")
 for idx, mode in enumerate(picam2.sensor_modes):
     print(f"Mode {idx}: {mode}")
 
-# Set 1080p60 configuration (if supported by your camera)
+# Use 1080p47 (1920x1080 at 47 FPS), the highest supported 16:9 mode
 video_config = picam2.create_video_configuration(
     main={"size": (1920, 1080)},
-    controls={"FrameRate": 60.0},
+    controls={"FrameRate": 47.0},
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
@@ -49,9 +49,8 @@ def display_duration():
         sys.stdout.flush()
         time.sleep(0.1)
 
-def convert_to_mp4(h264_path, mp4_path, fps=60):
+def convert_to_mp4(h264_path, mp4_path, fps=47):
     print(f"Converting {h264_path} to {mp4_path} using ffmpeg...")
-    # -y: overwrite, -framerate: input fps, -c copy: no re-encode
     cmd = [
         "ffmpeg", "-y", "-framerate", str(fps),
         "-i", h264_path,
@@ -64,7 +63,7 @@ def convert_to_mp4(h264_path, mp4_path, fps=60):
     except subprocess.CalledProcessError as e:
         print(f"ffmpeg conversion failed: {e}")
 
-print("IR Signal Analysis Recording System (1080p60, Preview ON)")
+print("IR Signal Analysis Recording System (1080p47, Preview ON)")
 print("Commands:")
 print("  1 - Start recording")
 print("  2 - Stop recording")
@@ -104,7 +103,7 @@ try:
             print(f"Saved as {final_filename}")
 
             # Convert to mp4
-            convert_to_mp4(final_filename, final_mp4, fps=60)
+            convert_to_mp4(final_filename, final_mp4, fps=47)
             
         elif command == "3":
             if recording:
@@ -126,7 +125,7 @@ try:
                 print(f"Recording saved as {final_filename}")
 
                 # Convert to mp4
-                convert_to_mp4(final_filename, final_mp4, fps=60)
+                convert_to_mp4(final_filename, final_mp4, fps=47)
             print("Exiting...")
             break
             
@@ -158,7 +157,7 @@ finally:
         print(f"Recording saved as {final_filename}")
 
         # Convert to mp4
-        convert_to_mp4(final_filename, final_mp4, fps=60)
+        convert_to_mp4(final_filename, final_mp4, fps=47)
     picam2.stop_preview()
     picam2.stop()
     print("Camera resources released")
