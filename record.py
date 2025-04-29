@@ -18,20 +18,23 @@ if not os.path.exists(output_folder):
 
 # Initialize camera with high frame rate and mirrored preview
 picam2 = Picamera2()
-print(picam2.sensor_modes)  # Print available modes
 
+# Print available sensor modes for reference (uncomment to check)
+# print("Available sensor modes:", picam2.sensor_modes)
+
+# For GS camera, use the correct sensor mode for 640x480@60fps or higher
 video_config = picam2.create_video_configuration(
-    main={"size": (320, 240)},  # Lower resolution for stability
-    controls={"FrameRate": 60.0},
+    main={"size": (640, 480)},
+    controls={"FrameRate": 60.0},  # Try 90.0 if your GS camera supports it
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
-encoder = H264Encoder(bitrate=2000000)
-# Do NOT start preview
-# picam2.start_preview(True)  # Comment this out
+
+encoder = H264Encoder(bitrate=4000000)
+
+# Start the camera with preview
+picam2.start_preview(True)
 picam2.start()
-
-
 
 recording = False
 temp_filename = ""
@@ -46,7 +49,7 @@ def display_duration():
         sys.stdout.flush()
         time.sleep(0.1)
 
-print("IR Signal Analysis Recording System")
+print("IR Signal Analysis Recording System (Global Shutter, Preview ON)")
 print("Commands:")
 print("  1 - Start recording")
 print("  2 - Stop recording")
