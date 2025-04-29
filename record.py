@@ -51,17 +51,10 @@ def configure_camera():
     if fastest_mode:
         print(f"Using sensor mode: {fastest_mode}")
         video_config = picam2.create_video_configuration(
-            main={"size": fastest_mode['size'], "format": "RGB888"},
-            controls={
-                "FrameRate": fastest_mode['fps'],
-                "FrameDurationLimits": (int(1e6/fastest_mode['fps']), int(1e6/fastest_mode['fps'])),
-                "NoiseReductionMode": 0,
-                "AwbEnable": 0,
-                "AeEnable": 0,
-            },
-            buffer_count=4,
-            transform=Transform(hflip=1)
-        )
+        main={"size": (640, 480), "format": "YUV420"},
+        controls={"FrameRate": 60.0},
+        transform=Transform(hflip=1)
+    )
     else:
         print("Fastest mode not found, using default 640x480@60fps")
         video_config = picam2.create_video_configuration(
