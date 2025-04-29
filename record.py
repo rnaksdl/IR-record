@@ -18,18 +18,18 @@ if not os.path.exists(output_folder):
 
 # Initialize camera with high frame rate and mirrored preview
 picam2 = Picamera2()
+
 video_config = picam2.create_video_configuration(
-    main={"size": (640, 480)},
+    main={"size": (320, 240)},  # Lower resolution for stability
     controls={"FrameRate": 60.0},
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
-
-encoder = H264Encoder(bitrate=4000000)
-
-# Start the camera with preview
-picam2.start_preview(True)
+encoder = H264Encoder(bitrate=2000000)
+# Do NOT start preview
+# picam2.start_preview(True)  # Comment this out
 picam2.start()
+
 
 recording = False
 temp_filename = ""
