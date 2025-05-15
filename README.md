@@ -2,8 +2,10 @@
 
 
 ```
-pip install opencv-python-headless numpy
-sudo apt install ffmpeg
+python -m venv cv_env              # Create isolated environment
+source cv_env/bin/activate         # Activate environment
+pip install --upgrade pip          # Update pip first
+pip install opencv-python-headless numpy  # Install within virtual env
 ```
 
 
