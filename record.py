@@ -260,6 +260,15 @@ finally:
         shutil.move(temp_filename, final_filename)
         print(f"Recording saved as {final_filename}")
         convert_to_mp4(final_filename, final_mp4, fps=record_fps)
-    picam2.stop_preview()
-    picam2.stop()
+        
+    try:
+            picam2.stop_preview()
+        except Exception as e:
+            print(f"Error stopping preview: {e}")
+        try:
+            picam2.stop()
+        except Exception as e:
+            print(f"Error stopping camera: {e}")
+    except Exception as e:
+        print(f"Cleanup error: {e}")
     print("Camera resources released")
