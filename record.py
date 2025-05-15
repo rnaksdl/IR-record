@@ -75,15 +75,17 @@ def detect_ir_lights(frame):
     """Detect purple IR lights in a frame and return their bounding boxes"""
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     
-    # Adjust these HSV ranges for your specific IR light color
-    lower_purple = np.array([120, 40, 40])
-    upper_purple = np.array([150, 255, 255])
+    # need to find correct value for this
+    lower_purple = np.array([100, 20, 20])
+    upper_purple = np.array([170, 255, 255])
     
     mask = cv2.inRange(hsv, lower_purple, upper_purple)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    print(f"Contours found: {len(contours)}")
+    
     return [cv2.boundingRect(cnt) for cnt in contours if cv2.contourArea(cnt) > 20]
 
 def calculate_crop_region(video_path):
