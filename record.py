@@ -262,13 +262,12 @@ finally:
         convert_to_mp4(final_filename, final_mp4, fps=record_fps)
         
     try:
-            picam2.stop_preview()
-        except Exception as e:
-            print(f"Error stopping preview: {e}")
-        try:
-            picam2.stop()
-        except Exception as e:
-            print(f"Error stopping camera: {e}")
+        picam2.stop_preview()
     except Exception as e:
-        print(f"Cleanup error: {e}")
+        print(f"Error stopping preview: {e}")
+    try:
+        picam2.stop()
+    except Exception as e:
+        print(f"Error stopping camera: {e}")
+        
     print("Camera resources released")
