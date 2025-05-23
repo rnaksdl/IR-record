@@ -6,19 +6,16 @@ from picamera2.outputs import FileOutput
 from libcamera import Transform
 import time
 import os
-from datetime import datetime
-import shutil
+import cv2
+import numpy as np
 import threading
 import sys
 import subprocess
+from datetime import datetime
+import shutil
 
-# Settings
+# Create output folder
 output_folder = "recordings"
-record_width = 1440
-record_height = 1080
-record_fps = 30.0  # Standard, universally compatible
-bitrate = 10000000
-
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
 
@@ -29,14 +26,25 @@ print("Available sensor modes:")
 for idx, mode in enumerate(picam2.sensor_modes):
     print(f"Mode {idx}: {mode}")
 
+# Use 1080p47 (1920x1080 at 47 FPS), the highest supported 16:9 mode
 video_config = picam2.create_video_configuration(
-    main={"size": (record_width, record_height)},
-    controls={"FrameRate": record_fps},
+    main={"size": (1640, 1232)},
+    controls={
+        "FrameRate": 60.0,
+        "ExposureTime": 20000,        # 20ms exposure
+        "AnalogueGain": 8.0,          # Increased gain
+        "Contrast": 1.5,              # Higher contrast
+        "Brightness": -0.2,           # Reduced brightness
+        "Saturation": 1.2,            # Enhanced color
+        "Sharpness": 0.0,             # Minimal sharpening
+        "AeEnable": False,            # Manual exposure
+        "AwbEnable": False            # Manual white balance
+    },
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
 
-encoder = H264Encoder(bitrate=bitrate)
+encoder = H264Encoder(bitrate=10000000)  # Higher bitrate for 1080p
 
 picam2.start_preview(True)
 picam2.start()
@@ -53,8 +61,8 @@ def display_duration():
         sys.stdout.flush()
         time.sleep(0.1)
 
-def convert_to_mp4(h264_path, mp4_path, fps):
-    print(f"Converting {h264_path} to {mp4_path} using ffmpeg at {fps} FPS...")
+def convert_to_mp4(h264_path, mp4_path, fps=47):
+    print(f"Converting {h264_path} to {mp4_path} using ffmpeg...")
     cmd = [
         "ffmpeg", "-y", "-framerate", str(fps),
         "-i", h264_path,
@@ -67,7 +75,47 @@ def convert_to_mp4(h264_path, mp4_path, fps):
     except subprocess.CalledProcessError as e:
         print(f"ffmpeg conversion failed: {e}")
 
-print(f"IR Signal Analysis Recording System ({record_width}x{record_height}@{int(record_fps)}fps, Preview ON)")
+def detect_ir_lights(frame):
+    # Convert to HSV color space
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    
+    # Define range for purple IR lights
+    lower_purple = np.array([130, 50, 200])  # Adjust these values as needed
+    upper_purple = np.array([160, 255, 255])
+    
+    # Create mask for purple colors
+    mask = cv2.inRange(hsv, lower_purple, upper_purple)
+    
+    # Apply additional brightness threshold
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    _, brightness_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+    
+    # Combine masks
+    final_mask = cv2.bitwise_and(mask, brightness_mask)
+    
+    # Find contours
+    contours, _ = cv2.findContours(final_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Filter contours by size
+    ir_lights = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if 10 < area < 200:  # Adjust these thresholds based on your IR light size
+            ir_lights.append(contour)
+    
+    return ir_lights
+
+def process_frame(frame):
+    ir_lights = detect_ir_lights(frame)
+    
+    # Draw detected IR lights
+    for contour in ir_lights:
+        x, y, w, h = cv2.boundingRect(contour)
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    
+    return frame
+
+print("IR Signal Analysis Recording System (1080p47, Preview ON)")
 print("Commands:")
 print("  1 - Start recording")
 print("  2 - Stop recording")
@@ -106,8 +154,8 @@ try:
             shutil.move(temp_filename, final_filename)
             print(f"Saved as {final_filename}")
 
-            # Convert to mp4 with correct FPS
-            convert_to_mp4(final_filename, final_mp4, fps=record_fps)
+            # Convert to mp4
+            convert_to_mp4(final_filename, final_mp4, fps=47)
             
         elif command == "3":
             if recording:
@@ -128,8 +176,8 @@ try:
                 shutil.move(temp_filename, final_filename)
                 print(f"Recording saved as {final_filename}")
 
-                # Convert to mp4 with correct FPS
-                convert_to_mp4(final_filename, final_mp4, fps=record_fps)
+                # Convert to mp4
+                convert_to_mp4(final_filename, final_mp4, fps=47)
             print("Exiting...")
             break
             
@@ -160,8 +208,8 @@ finally:
         shutil.move(temp_filename, final_filename)
         print(f"Recording saved as {final_filename}")
 
-        # Convert to mp4 with correct FPS
-        convert_to_mp4(final_filename, final_mp4, fps=record_fps)
+        # Convert to mp4
+        convert_to_mp4(final_filename, final_mp4, fps=47)
     picam2.stop_preview()
     picam2.stop()
     print("Camera resources released")
