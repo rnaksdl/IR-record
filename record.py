@@ -26,7 +26,7 @@ video_config = picam2.create_video_configuration(
     main={"size": (1280, 720)},  # Lower resolution for testing
     controls={
         "FrameRate": 30.0,       # Standard frame rate
-        "Brightness": -0.5,      # Lower brightness
+        "Brightness": -2.0,      # Lower brightness
         "Contrast": 2.0,         # Increase contrast
         "Saturation": 1.2,       # Slightly enhance colors
         "Sharpness": 0.0         # Minimal sharpening
