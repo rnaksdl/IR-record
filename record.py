@@ -41,58 +41,10 @@ picam2.start_preview(True)
 picam2.start()
 
 recording = False
+camera_started = True
 temp_filename = ""
 start_time = 0
 stop_thread = False
-
-# Gamma correction function
-def apply_gamma_correction(frame, gamma=0.5):
-    inv_gamma = 1.0 / gamma
-    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
-    return cv2.LUT(frame, table)
-
-# Mask non-light areas
-def mask_non_light_areas(frame, threshold=200):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, mask = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
-    return cv2.bitwise_and(frame, frame, mask=mask)
-
-# Process each frame to emphasize light sources
-def process_frame(frame):
-    # Apply gamma correction
-    frame = apply_gamma_correction(frame, gamma=0.5)
-    
-    # Mask non-light areas
-    frame = mask_non_light_areas(frame, threshold=200)
-    
-    return frame
-
-def display_duration():
-    while recording and not stop_thread:
-        elapsed = time.time() - start_time
-        sys.stdout.write(f"\rRecording duration: {elapsed:.1f}s")
-        sys.stdout.flush()
-        time.sleep(0.1)
-
-def convert_to_mp4(h264_path, mp4_path, fps=30):
-    print(f"Converting {h264_path} to {mp4_path} using ffmpeg...")
-    cmd = [
-        "ffmpeg", "-y", "-framerate", str(fps),
-        "-i", h264_path,
-        "-c", "copy",
-        mp4_path
-    ]
-    try:
-        subprocess.run(cmd, check=True)
-        print(f"Conversion complete: {mp4_path}")
-    except subprocess.CalledProcessError as e:
-        print(f"ffmpeg conversion failed: {e}")
-
-print("Recording System (720p@30fps, Preview ON)")
-print("Commands:")
-print("  1 - Start recording")
-print("  2 - Stop recording")
-print("  3 - Quit")
 
 try:
     while True:
@@ -133,7 +85,10 @@ try:
         elif command == "3":
             if recording:
                 sys.stdout.write("\n")
-                picam2.stop_recording()
+                try:
+                    picam2.stop_recording()
+                except Exception:
+                    pass
                 recording = False
                 stop_thread = True
             print("Exiting...")
@@ -145,8 +100,24 @@ try:
 except KeyboardInterrupt:
     print("\nProgram interrupted")
 finally:
+    # Only stop recording if still recording
     if recording:
-        picam2.stop_recording()
-    picam2.stop_preview()
-    picam2.stop()
+        try:
+            picam2.stop_recording()
+        except Exception:
+            pass
+        recording = False
+
+    # Only stop preview/camera if started
+    if camera_started:
+        try:
+            picam2.stop_preview()
+        except Exception:
+            pass
+        try:
+            picam2.stop()
+        except Exception:
+            pass
+        camera_started = False
+
     print("Camera resources released")
