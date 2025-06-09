@@ -210,6 +210,14 @@ finally:
 
         # Convert to mp4
         convert_to_mp4(final_filename, final_mp4, fps=47)
-    picam2.stop_preview()
-    picam2.stop()
+
+    try:
+        picam2.stop_preview()
+    except Exception:
+        pass
+    try:
+        picam2.stop()
+    except Exception:
+        pass
+
     print("Camera resources released")
