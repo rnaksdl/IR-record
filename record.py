@@ -25,11 +25,11 @@ picam2 = Picamera2()
 video_config = picam2.create_video_configuration(
     main={"size": (1280, 720)},  # Lower resolution for testing
     controls={
-        "FrameRate": 30.0,       # Standard frame rate
-        "Brightness": -2.0,      # Lower brightness
-        "Contrast": 0.0,         # Increase contrast
-        "Saturation": 0.0,       # Slightly enhance colors
-        "Sharpness": 0.0         # Minimal sharpening
+        "FrameRate": 30.0,
+        "Brightness": -2.0,
+        "Contrast": 1.0,
+        "Saturation": 1.0,
+        "Sharpness": 1.0
     },
     transform=Transform(hflip=1)
 )
