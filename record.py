@@ -27,7 +27,7 @@ video_config = picam2.create_video_configuration(
     controls={
         "Brightness": -1.0,  # -1 to 1 (0 default)
         "Contrast": 32.0, # 0 to 32 (1 default)
-        "NoiseReductionMode": HighQuality,
+        'NoiseReductionMode': <NoiseReductionMode.Fast: 1>,
         "Saturation": 16.0, # 0 to 32 (1 default)
         "Sharpness": 16.0 # 0 to 16 (1 default)
 
