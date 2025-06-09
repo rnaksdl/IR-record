@@ -33,8 +33,8 @@ video_config = picam2.create_video_configuration(
         "FrameRate": 60.0,
         "ExposureTime": 20000,        # 20ms exposure
         "AnalogueGain": 8.0,          # Increased gain
-        "Contrast": 1.5,              # Higher contrast
-        "Brightness": -0.2,           # Reduced brightness
+        "Contrast": 2.0,              # Higher contrast for light emphasis
+        "Brightness": -0.5,           # Reduced brightness for non-light areas
         "Saturation": 1.2,            # Enhanced color
         "Sharpness": 0.0,             # Minimal sharpening
         "AeEnable": False,            # Manual exposure
@@ -80,15 +80,15 @@ def detect_ir_lights(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     
     # Define range for purple IR lights
-    lower_purple = np.array([130, 50, 200])  # Adjust these values as needed
-    upper_purple = np.array([160, 255, 255])
+    lower_purple = np.array([120, 40, 180])  # Adjusted range
+    upper_purple = np.array([170, 255, 255])
     
     # Create mask for purple colors
     mask = cv2.inRange(hsv, lower_purple, upper_purple)
     
     # Apply additional brightness threshold
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, brightness_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+    _, brightness_mask = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)  # Lower threshold
     
     # Combine masks
     final_mask = cv2.bitwise_and(mask, brightness_mask)
@@ -105,7 +105,16 @@ def detect_ir_lights(frame):
     
     return ir_lights
 
+def apply_gamma_correction(frame, gamma=0.5):
+    inv_gamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+    return cv2.LUT(frame, table)
+
 def process_frame(frame):
+    # Apply gamma correction
+    frame = apply_gamma_correction(frame, gamma=0.5)
+    
+    # Detect IR lights
     ir_lights = detect_ir_lights(frame)
     
     # Draw detected IR lights
