@@ -21,30 +21,21 @@ if not os.path.exists(output_folder):
 
 picam2 = Picamera2()
 
-# Print available sensor modes for reference
-print("Available sensor modes:")
-for idx, mode in enumerate(picam2.sensor_modes):
-    print(f"Mode {idx}: {mode}")
-
-# Use 1080p47 (1920x1080 at 47 FPS), the highest supported 16:9 mode
+# Camera configuration with reduced brightness and increased contrast
 video_config = picam2.create_video_configuration(
-    main={"size": (1640, 1232)},
+    main={"size": (1280, 720)},  # Lower resolution for testing
     controls={
-        "FrameRate": 60.0,
-        "ExposureTime": 20000,        # 20ms exposure
-        "AnalogueGain": 8.0,          # Increased gain
-        "Contrast": 2.0,              # Higher contrast for light emphasis
-        "Brightness": -0.5,           # Reduced brightness for non-light areas
-        "Saturation": 1.2,            # Enhanced color
-        "Sharpness": 0.0,             # Minimal sharpening
-        "AeEnable": False,            # Manual exposure
-        "AwbEnable": False            # Manual white balance
+        "FrameRate": 30.0,       # Standard frame rate
+        "Brightness": -0.5,      # Lower brightness
+        "Contrast": 2.0,         # Increase contrast
+        "Saturation": 1.2,       # Slightly enhance colors
+        "Sharpness": 0.0         # Minimal sharpening
     },
     transform=Transform(hflip=1)
 )
 picam2.configure(video_config)
 
-encoder = H264Encoder(bitrate=10000000)  # Higher bitrate for 1080p
+encoder = H264Encoder(bitrate=10000000)  # High bitrate for quality recording
 
 picam2.start_preview(True)
 picam2.start()
@@ -54,6 +45,28 @@ temp_filename = ""
 start_time = 0
 stop_thread = False
 
+# Gamma correction function
+def apply_gamma_correction(frame, gamma=0.5):
+    inv_gamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+    return cv2.LUT(frame, table)
+
+# Mask non-light areas
+def mask_non_light_areas(frame, threshold=200):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    _, mask = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
+    return cv2.bitwise_and(frame, frame, mask=mask)
+
+# Process each frame to emphasize light sources
+def process_frame(frame):
+    # Apply gamma correction
+    frame = apply_gamma_correction(frame, gamma=0.5)
+    
+    # Mask non-light areas
+    frame = mask_non_light_areas(frame, threshold=200)
+    
+    return frame
+
 def display_duration():
     while recording and not stop_thread:
         elapsed = time.time() - start_time
@@ -61,7 +74,7 @@ def display_duration():
         sys.stdout.flush()
         time.sleep(0.1)
 
-def convert_to_mp4(h264_path, mp4_path, fps=47):
+def convert_to_mp4(h264_path, mp4_path, fps=30):
     print(f"Converting {h264_path} to {mp4_path} using ffmpeg...")
     cmd = [
         "ffmpeg", "-y", "-framerate", str(fps),
@@ -75,56 +88,7 @@ def convert_to_mp4(h264_path, mp4_path, fps=47):
     except subprocess.CalledProcessError as e:
         print(f"ffmpeg conversion failed: {e}")
 
-def detect_ir_lights(frame):
-    # Convert to HSV color space
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    
-    # Define range for purple IR lights
-    lower_purple = np.array([120, 40, 180])  # Adjusted range
-    upper_purple = np.array([170, 255, 255])
-    
-    # Create mask for purple colors
-    mask = cv2.inRange(hsv, lower_purple, upper_purple)
-    
-    # Apply additional brightness threshold
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, brightness_mask = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)  # Lower threshold
-    
-    # Combine masks
-    final_mask = cv2.bitwise_and(mask, brightness_mask)
-    
-    # Find contours
-    contours, _ = cv2.findContours(final_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Filter contours by size
-    ir_lights = []
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if 10 < area < 200:  # Adjust these thresholds based on your IR light size
-            ir_lights.append(contour)
-    
-    return ir_lights
-
-def apply_gamma_correction(frame, gamma=0.5):
-    inv_gamma = 1.0 / gamma
-    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
-    return cv2.LUT(frame, table)
-
-def process_frame(frame):
-    # Apply gamma correction
-    frame = apply_gamma_correction(frame, gamma=0.5)
-    
-    # Detect IR lights
-    ir_lights = detect_ir_lights(frame)
-    
-    # Draw detected IR lights
-    for contour in ir_lights:
-        x, y, w, h = cv2.boundingRect(contour)
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-    
-    return frame
-
-print("IR Signal Analysis Recording System (1080p47, Preview ON)")
+print("Recording System (720p@30fps, Preview ON)")
 print("Commands:")
 print("  1 - Start recording")
 print("  2 - Stop recording")
@@ -164,7 +128,7 @@ try:
             print(f"Saved as {final_filename}")
 
             # Convert to mp4
-            convert_to_mp4(final_filename, final_mp4, fps=47)
+            convert_to_mp4(final_filename, final_mp4, fps=30)
             
         elif command == "3":
             if recording:
@@ -172,61 +136,17 @@ try:
                 picam2.stop_recording()
                 recording = False
                 stop_thread = True
-                
-                actual_duration = time.time() - start_time
-                seconds = int(actual_duration)
-                tenths = int((actual_duration - seconds) * 10)
-                duration_str = f"{seconds}_{tenths}s"
-                
-                timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
-                final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
-                final_mp4 = f"{output_folder}/{timestamp}_{duration_str}.mp4"
-                
-                shutil.move(temp_filename, final_filename)
-                print(f"Recording saved as {final_filename}")
-
-                # Convert to mp4
-                convert_to_mp4(final_filename, final_mp4, fps=47)
             print("Exiting...")
             break
             
         else:
-            if command == "1" and recording:
-                print("Already recording")
-            elif command == "2" and not recording:
-                print("Not currently recording")
-            else:
-                print("Unknown command")
+            print("Unknown command")
                 
 except KeyboardInterrupt:
     print("\nProgram interrupted")
 finally:
     if recording:
-        sys.stdout.write("\n")
         picam2.stop_recording()
-        
-        actual_duration = time.time() - start_time
-        seconds = int(actual_duration)
-        tenths = int((actual_duration - seconds) * 10)
-        duration_str = f"{seconds}_{tenths}s"
-        
-        timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
-        final_filename = f"{output_folder}/{timestamp}_{duration_str}.h264"
-        final_mp4 = f"{output_folder}/{timestamp}_{duration_str}.mp4"
-        
-        shutil.move(temp_filename, final_filename)
-        print(f"Recording saved as {final_filename}")
-
-        # Convert to mp4
-        convert_to_mp4(final_filename, final_mp4, fps=47)
-
-    try:
-        picam2.stop_preview()
-    except Exception:
-        pass
-    try:
-        picam2.stop()
-    except Exception:
-        pass
-
+    picam2.stop_preview()
+    picam2.stop()
     print("Camera resources released")
