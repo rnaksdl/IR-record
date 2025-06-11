@@ -13,6 +13,7 @@ import sys
 import subprocess
 from datetime import datetime
 import shutil
+import gc
 
 # Create output folder
 output_folder = "recordings"
@@ -157,16 +158,25 @@ finally:
             pass
         recording = False
 
-    # Only stop preview/camera if started
-    if camera_started:
-        try:
-            picam2.stop_preview()
-        except Exception:
-            pass
-        try:
-            picam2.stop()
-        except Exception:
-            pass
-        camera_started = False
+    # Stop preview before stopping camera
+    try:
+        picam2.stop_preview()
+    except Exception:
+        pass
+
+    # Explicitly delete encoder and output objects
+    try:
+        del encoder
+    except Exception:
+        pass
+
+    # Now stop the camera
+    try:
+        picam2.stop()
+    except Exception:
+        pass
+
+    # Force garbage collection
+    gc.collect()
 
     print("Camera resources released")
