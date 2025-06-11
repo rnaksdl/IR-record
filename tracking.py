@@ -2,47 +2,89 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from scipy.signal import savgol_filter
 
-def detect_leds_with_blue_halo(image):
-    # 1. Threshold for bright white centers
+# === Easily change your video file here ===
+video_path = './testdata/far_down.mp4'
+# =========================================
+
+def detect_leds_with_blue_or_purple_halo(image):
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blur = cv2.medianBlur(gray, 7)
-    _, thresh = cv2.threshold(blur, 220, 255, cv2.THRESH_BINARY)  # Only very bright spots
 
-    # 2. Find contours
+    # Lower threshold to catch dimmer LEDs
+    _, thresh = cv2.threshold(gray, 130, 255, cv2.THRESH_BINARY)
+
+    # Morphological opening to remove noise
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
-    opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
-    cnts, _ = cv2.findContours(opening, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
 
+    cnts, _ = cv2.findContours(opening, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     detected = []
     for c in cnts:
         area = cv2.contourArea(c)
-        if area < 10 or area > 1000:
+        if area < 0.5 or area > 1000:
             continue
         ((x, y), r) = cv2.minEnclosingCircle(c)
         x, y, r = int(x), int(y), int(r)
-        # 3. Check for blue/purple halo just outside the white region
         mask = np.zeros(gray.shape, dtype=np.uint8)
-        cv2.circle(mask, (x, y), r+3, 255, 2)  # Ring just outside the white blob
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        cv2.circle(mask, (x, y), r+3, 255, 2)
         ring_pixels = hsv[mask == 255]
-        # Blue/purple in HSV: H in [110, 160], S > 60, V > 40
-        blue_pixels = np.sum(
-            (ring_pixels[:, 0] >= 110) & (ring_pixels[:, 0] <= 160) &
-            (ring_pixels[:, 1] > 60) & (ring_pixels[:, 2] > 40)
+        # Blue: 110-130, Purple: 130-170
+        blue_purple_pixels = np.sum(
+            ((ring_pixels[:, 0] >= 110) & (ring_pixels[:, 0] <= 170)) &
+            (ring_pixels[:, 1] > 40) & (ring_pixels[:, 2] > 30)
         )
-        if len(ring_pixels) > 0 and blue_pixels > 0.05 * len(ring_pixels):  # At least 5% of ring is blue/purple
+        if len(ring_pixels) > 0 and blue_purple_pixels > 0.03 * len(ring_pixels):
             detected.append((x, y, r))
     return detected
 
-def draw_leds(frame, centers):
+
+def draw_leds(frame, centers, ring_center=None):
     for (x, y, r) in centers:
         cv2.circle(frame, (x, y), r, (0, 255, 0), 2)
         cv2.circle(frame, (x, y), 2, (0, 0, 255), 3)
+    if ring_center is not None:
+        x, y = int(ring_center[0]), int(ring_center[1])
+        cv2.circle(frame, (x, y), 8, (255, 0, 0), 2)
+        cv2.circle(frame, (x, y), 2, (255, 0, 0), 3)
     return frame
 
+def fit_circle(xs, ys):
+    if len(xs) < 3:
+        return None
+    A = np.c_[2*xs, 2*ys, np.ones(len(xs))]
+    b = xs**2 + ys**2
+    c, resid, rank, s = np.linalg.lstsq(A, b, rcond=None)
+    xc, yc = c[0], c[1]
+    return (xc, yc)
+
+def interpolate_centers(centers):
+    # Interpolate missing (None) centers linearly
+    centers = np.array([
+        [c[0], c[1]] if c is not None else [np.nan, np.nan]
+        for c in centers
+    ])
+    for i in range(2):  # x and y
+        valid = ~np.isnan(centers[:, i])
+        if np.sum(valid) < 2:
+            continue
+        centers[:, i] = np.interp(
+            np.arange(len(centers)),
+            np.flatnonzero(valid),
+            centers[valid, i]
+        )
+    return centers
+
+def smooth_centers(centers, window=9, poly=2):
+    # Apply Savitzky-Golay filter for smoothing
+    if len(centers) < window:
+        return centers
+    x = savgol_filter(centers[:,0], window, poly)
+    y = savgol_filter(centers[:,1], window, poly)
+    return np.stack([x, y], axis=1)
+
 def main():
-    video_path = './testdata/250609_174322_7_8s.mp4'
     output_folder = 'output'
     frames_folder = os.path.join(output_folder, 'frames')
     os.makedirs(frames_folder, exist_ok=True)
@@ -50,6 +92,7 @@ def main():
 
     cap = cv2.VideoCapture(video_path)
     led_tracks = []  # List of lists: one per tracked LED
+    ring_centers = []
     frame_idx = 0
 
     while cap.isOpened():
@@ -57,7 +100,7 @@ def main():
         if not ret:
             break
 
-        centers = detect_leds_with_blue_halo(frame)
+        centers = detect_leds_with_blue_or_purple_halo(frame)
         centers_xy = [(x, y) for (x, y, r) in centers]
 
         # Tracking logic (simple nearest neighbor)
@@ -99,17 +142,24 @@ def main():
                     new_track = [None] * frame_idx
                     new_track.append(centers_xy[j])
                     led_tracks.append(new_track)
-        frame_idx += 1
+        # Estimate ring center by fitting a circle to detected LEDs
+        if len(centers_xy) >= 3:
+            xs = np.array([pt[0] for pt in centers_xy])
+            ys = np.array([pt[1] for pt in centers_xy])
+            fit = fit_circle(xs, ys)
+            ring_centers.append(fit)
+        else:
+            ring_centers.append(None)
 
         # Draw and save frame
-        frame_draw = draw_leds(frame.copy(), centers)
+        frame_draw = draw_leds(frame.copy(), centers, ring_center=ring_centers[-1])
         frame_save_path = os.path.join(frames_folder, f'frame_{frame_idx:05d}.png')
         cv2.imwrite(frame_save_path, frame_draw)
+        frame_idx += 1
 
     cap.release()
 
-    # After all frames: make two plots
-    # 1. Displacement vs. time for each LED
+    # Displacement vs. time for each LED
     plt.figure(figsize=(10, 5))
     for idx, track in enumerate(led_tracks):
         track_clean = [pt for pt in track if pt is not None]
@@ -131,39 +181,29 @@ def main():
     plt.ylabel('Displacement (pixels)')
     plt.title('Displacement of Purple LEDs vs. Time')
     plt.grid(True)
-    plt.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(output_folder, 'displacement.png'))
     plt.close()
 
-    # 2. Trajectory plot for all LEDs
+    # Trajectory plot for the ring center (smoothed)
+    # Interpolate missing centers
+    centers_interp = interpolate_centers(ring_centers)
+    # Smooth the trajectory
+    centers_smooth = smooth_centers(centers_interp, window=9, poly=2)
+    initial = centers_smooth[0]
+    x_disp = centers_smooth[:,0] - initial[0]
+    y_disp = -(centers_smooth[:,1] - initial[1])  # Invert Y for plotting
+
     plt.figure(figsize=(8, 8))
-    for idx, track in enumerate(led_tracks):
-        x_disp, y_disp = [], []
-        track_clean = [pt for pt in track if pt is not None]
-        if len(track_clean) < 2:
-            continue
-        initial = track_clean[0]
-        for pt in track:
-            if pt is not None:
-                dx = pt[0] - initial[0]
-                dy = -(pt[1] - initial[1])  # Invert Y for plotting
-                x_disp.append(dx)
-                y_disp.append(dy)
-            else:
-                x_disp.append(None)
-                y_disp.append(None)
-        x_disp_clean = [x for x in x_disp if x is not None]
-        y_disp_clean = [y for y in y_disp if y is not None]
-        plt.plot(x_disp_clean, y_disp_clean, marker='o', label=f'LED #{idx+1}')
+    plt.plot(x_disp, y_disp, marker='o')
     plt.xlabel('X Displacement (pixels)')
     plt.ylabel('Y Displacement (pixels)')
-    plt.title('Trajectory of Purple LEDs')
+    plt.title('Trajectory of Ring Center (Smoothed)')
+
     plt.grid(True)
     plt.axis('equal')
-    plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(output_folder, 'trajectory.png'))
+    plt.savefig(os.path.join(output_folder, 'trajectory_ring_center.png'))
     plt.close()
 
 if __name__ == "__main__":
