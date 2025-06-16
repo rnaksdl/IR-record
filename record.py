@@ -29,7 +29,7 @@ video_config = picam2.create_video_configuration(
         "Saturation": 1.0,   # 0 to 32 (1 default)
         "Sharpness": 16.0    # 0 to 16 (1 default)
     },
-    transform=Transform(rotation=90)  # Rotate the preview by 90 degrees
+    transform=Transform(rotation=0)  # Rotate the preview by 90 degrees
 )
 picam2.configure(video_config)
 
