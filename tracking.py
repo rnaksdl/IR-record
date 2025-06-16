@@ -5,7 +5,7 @@ import os
 import csv
 from scipy.signal import savgol_filter
 
-input_folder = './testdata'
+input_folder = './input'
 output_folder = 'output'
 os.makedirs(output_folder, exist_ok=True)
 
