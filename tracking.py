@@ -309,6 +309,7 @@ def process_video(video_path, output_folder, video_idx, total_videos):
             plt.savefig(os.path.join(plots_folder, f'led{idx+1}_flat{seg_idx+1}.png'))
             plt.close()
 
+
 if __name__ == "__main__":
     video_files = [fname for fname in os.listdir(input_folder)
                   if fname.lower().endswith(('.mp4'))]
