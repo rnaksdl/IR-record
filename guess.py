@@ -5,7 +5,7 @@ from sklearn.cluster import KMeans
 from scipy.signal import savgol_filter
 from itertools import permutations
 
-# Reference keypad (normalized for this example)
+# Reference keypad
 reference_keys = np.array([
     [0, 0],   # 1 (top-left)
     [1, 0],   # 2 (top-center)
@@ -16,8 +16,9 @@ reference_keys = np.array([
     [0, 2],   # 7 (bot-left)
     [1, 2],   # 8 (bot-center)
     [2, 2],   # 9 (bot-right)
+    [1, 3],   # 0 (bottom-center)
 ])
-key_labels = ['1','2','3','4','5','6','7','8','9']
+key_labels = ['1','2','3','4','5','6','7','8','9','0']
 
 def normalize(points):
     points = np.array(points)
