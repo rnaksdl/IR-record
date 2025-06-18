@@ -130,10 +130,16 @@ try:
             final_mp4 = f"{output_folder}/{timestamp}_{duration_str}.mp4"
             
             shutil.move(temp_filename, final_filename)
-            print(f"Saved as {final_filename}")
+            # print(f"Saved as {final_filename}")  # <-- Commented out, don't print .h264 filename
 
             # Convert to mp4
             convert_to_mp4(final_filename, final_mp4, fps=30)
+
+            # Remove the .h264 file after conversion
+            if os.path.exists(final_filename):
+                os.remove(final_filename)
+            print(f"Saved as {final_mp4}")
+
             
         elif command == "3":
             if recording:
