@@ -7,9 +7,9 @@ from sklearn.cluster import KMeans
 from itertools import permutations
 
 # --- CONFIGURATION ---
-ACTUAL_PIN = '1397'  # Set your actual PIN here for evaluation
+ACTUAL_PIN = '0000'  # Set your actual PIN here for evaluation
 OUTPUT_DIR = './output'
-REPORT_FOLDER = 'reporthmm'
+REPORT_FOLDER = 'report2'
 PINPAD_COORDS = np.array([
     [0,0], [1,0], [2,0],   # 1 2 3
     [0,1], [1,1], [2,1],   # 4 5 6
