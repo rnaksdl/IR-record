@@ -1,140 +1,112 @@
 import os
+import glob
 import numpy as np
 import pandas as pd
-from scipy.signal import find_peaks, butter, filtfilt, savgol_filter
+import matplotlib.pyplot as plt
+from scipy.stats import multivariate_normal
 
-# Reference keypad layout (from guess.py)
-reference_keys = np.array([
-    [-503, -306],   # 1
-    [0,   -311],    # 2
-    [504,  -310],   # 3
-    [-513,     0],  # 4
-    [0,      0],    # 5 (center)
-    [513,    -2],   # 6
-    [-510,   307],  # 7
-    [-1,   304],    # 8
-    [513,   303],   # 9
-    [ -3,   620],   # 0
+# --- CONFIGURATION ---
+ACTUAL_PIN = '1397'  # Set your actual PIN here for evaluation
+OUTPUT_DIR = './output'
+REPORT_FOLDER = 'report'
+PINPAD_COORDS = np.array([
+    [0,0], [1,0], [2,0],   # 1 2 3
+    [0,1], [1,1], [2,1],   # 4 5 6
+    [0,2], [1,2], [2,2],   # 7 8 9
+    [1,3]                  # 0
 ])
-key_labels = ['1','2','3','4','5','6','7','8','9','0']
+PINPAD_DIGITS = ['1','2','3','4','5','6','7','8','9','0']
+N_STATES = len(PINPAD_DIGITS)
+SIGMA = 0.5  # Standard deviation for emission (tune for your data)
 
-def interpolate_centers(centers):
-    centers = np.array([
-        [c[0], c[1]] if c is not None else [np.nan, np.nan]
-        for c in centers
-    ])
-    for i in range(2):  # x and y
-        valid = ~np.isnan(centers[:, i])
-        if np.sum(valid) < 2:
-            continue
-        centers[:, i] = np.interp(
-            np.arange(len(centers)),
-            np.flatnonzero(valid),
-            centers[valid, i]
-        )
-    return centers
-
-def smooth_centers(centers, window=9, poly=2):
-    if len(centers) < window:
-        return centers
-    x = savgol_filter(centers[:,0], window, poly)
-    y = savgol_filter(centers[:,1], window, poly)
-    return np.stack([x, y], axis=1)
-
-def butter_lowpass_filter(data, cutoff, fs, order=2):
-    nyq = 0.5 * fs
-    normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
-    y = filtfilt(b, a, data)
-    return y
-
-def detect_keystrokes(y, fps, expected_n=4):
-    y_smooth = butter_lowpass_filter(y, cutoff=6, fs=fps)
-    accel = np.gradient(np.gradient(y_smooth))
-    peaks, props = find_peaks(-accel, prominence=0.5)
-    prominences = props['prominences']
-    if len(prominences) == 0:
-        return np.array([], dtype=int)
-    # Pick the top N peaks by prominence
-    if len(peaks) > expected_n:
-        idx = np.argsort(prominences)[-expected_n:]
-        keystroke_frames = np.sort(peaks[idx])
-    else:
-        keystroke_frames = peaks
-    return keystroke_frames
-
-def map_to_keys(xs_k, ys_k):
-    pins = []
-    for x, y in zip(xs_k, ys_k):
-        dists = np.linalg.norm(reference_keys - np.array([x, y]), axis=1)
-        idx = np.argmin(dists)
-        pins.append(key_labels[idx])
-    return pins
-
-def process_csv(csv_path, n_keys=4, fps=30):
+def load_trajectory(csv_path):
     df = pd.read_csv(csv_path)
-    led_cols = [col for col in df.columns if col.startswith('led') and ('_x' in col or '_y' in col)]
-    n_leds = len(led_cols) // 2
-    ring_centers = []
-    for idx, row in df.iterrows():
-        pts = []
-        for led_idx in range(n_leds):
-            x = row.get(f'led{led_idx+1}_x')
-            y = row.get(f'led{led_idx+1}_y')
-            if not (pd.isna(x) or pd.isna(y)):
-                pts.append((x, y))
-        if pts:
-            ring_centers.append(np.mean(pts, axis=0))
-        else:
-            ring_centers.append(None)
-    valid_idx = [i for i, c in enumerate(ring_centers) if c is not None]
-    if len(valid_idx) < n_keys:
-        return None, f"Not enough valid ring center frames ({len(valid_idx)})"
-    centers_interp = interpolate_centers(ring_centers)
-    centers_smooth = smooth_centers(centers_interp, window=9, poly=2)
-    if len(centers_smooth) == 0 or np.isnan(centers_smooth).all():
-        return None, "No valid ring center trajectory"
-    ys = centers_smooth[:,1]
-    xs = centers_smooth[:,0]
-    keystroke_frames = detect_keystrokes(ys, fps, expected_n=n_keys)
-    if len(keystroke_frames) < n_keys:
-        return None, f"Not enough keystrokes detected ({len(keystroke_frames)})"
-    xs_k = xs[keystroke_frames]
-    ys_k = ys[keystroke_frames]
-    pin = map_to_keys(xs_k, ys_k)
-    return pin, None
+    for xcol, ycol in [('ring_x', 'ring_y'), ('center_x', 'center_y'), ('x', 'y')]:
+        if xcol in df.columns and ycol in df.columns:
+            xs = df[xcol].values
+            ys = df[ycol].values
+            mask = ~np.isnan(xs) & ~np.isnan(ys)
+            return np.stack([xs[mask], ys[mask]], axis=1)
+    raise ValueError("Could not find ring center columns in CSV.")
+
+def build_emission_probs(points):
+    # emission_probs[t, s] = P(observation at t | state s)
+    emission_probs = np.zeros((len(points), N_STATES))
+    for s, mu in enumerate(PINPAD_COORDS):
+        rv = multivariate_normal(mean=mu, cov=SIGMA**2 * np.eye(2))
+        emission_probs[:, s] = rv.pdf(points)
+    # Normalize for numerical stability
+    emission_probs = emission_probs / (emission_probs.sum(axis=1, keepdims=True) + 1e-12)
+    return emission_probs
+
+def build_transition_probs():
+    # Uniform transition probability (can be replaced with PIN statistics)
+    trans = np.ones((N_STATES, N_STATES)) / N_STATES
+    return trans
+
+def viterbi(emission_probs, trans_probs, start_probs):
+    T, N = emission_probs.shape
+    log_emiss = np.log(emission_probs + 1e-12)
+    log_trans = np.log(trans_probs + 1e-12)
+    log_start = np.log(start_probs + 1e-12)
+    dp = np.zeros((T, N))  # dp[t, s]: max log-prob of path ending at state s at time t
+    ptr = np.zeros((T, N), dtype=int)
+    dp[0] = log_start + log_emiss[0]
+    for t in range(1, T):
+        for s in range(N):
+            seq_probs = dp[t-1] + log_trans[:, s]
+            ptr[t, s] = np.argmax(seq_probs)
+            dp[t, s] = seq_probs[ptr[t, s]] + log_emiss[t, s]
+    # Backtrack
+    states = np.zeros(T, dtype=int)
+    states[-1] = np.argmax(dp[-1])
+    for t in range(T-2, -1, -1):
+        states[t] = ptr[t+1, states[t+1]]
+    return states, np.max(dp[-1])
+
+def process_csv(csv_path, actual_pin):
+    points = load_trajectory(csv_path)
+    emission_probs = build_emission_probs(points)
+    trans_probs = build_transition_probs()
+    start_probs = np.ones(N_STATES) / N_STATES  # Uniform start
+    states, logprob = viterbi(emission_probs, trans_probs, start_probs)
+    decoded_digits = [PINPAD_DIGITS[s] for s in states]
+    # Collapse consecutive repeats (user may linger on a key)
+    pin_guess = []
+    for d in decoded_digits:
+        if not pin_guess or d != pin_guess[-1]:
+            pin_guess.append(d)
+    pin_guess = ''.join(pin_guess)
+    # Only keep first 4 digits as the PIN guess
+    pin_guess = pin_guess[:4]
+    print(f"Decoded PIN: {pin_guess} (actual: {actual_pin})")
+    print(f"Match: {'YES' if pin_guess == actual_pin else 'NO'}")
+    # Plot
+    plt.figure(figsize=(6,6))
+    plt.plot(points[:,0], points[:,1], marker='o', label='Trajectory')
+    for i, mu in enumerate(PINPAD_COORDS):
+        plt.scatter(mu[0], mu[1], marker='s', s=100, label=f"{PINPAD_DIGITS[i]}")
+    plt.title(f"Decoded PIN: {pin_guess} (actual: {actual_pin})")
+    plt.legend()
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    outdir = os.path.join(os.path.dirname(csv_path), REPORT_FOLDER)
+    os.makedirs(outdir, exist_ok=True)
+    plt.savefig(os.path.join(outdir, 'hmm_decoded.png'))
+    plt.close()
+    # Save result
+    with open(os.path.join(outdir, 'hmm_result.txt'), 'w') as f:
+        f.write(f"Decoded PIN: {pin_guess}\n")
+        f.write(f"Actual PIN: {actual_pin}\n")
+        f.write(f"Match: {'YES' if pin_guess == actual_pin else 'NO'}\n")
+        f.write(f"Log-probability: {logprob}\n")
 
 def main():
-    output_root = './output'
-    n_keys = 4
-    fps = 30
+    csv_files = glob.glob(os.path.join(OUTPUT_DIR, '*', '*_ring_center.csv'))
+    print(f"Found {len(csv_files)} *_ring_center.csv files.")
+    for idx, csv_path in enumerate(csv_files, 1):
+        print(f"Processing {idx}/{len(csv_files)}: {csv_path}")
+        process_csv(csv_path, ACTUAL_PIN)
 
-    folder_pins = {}
-    folder_errors = {}
-    for root, dirs, files in os.walk(output_root):
-        csvs = [f for f in files if f.endswith('.csv')]
-        if not csvs:
-            continue
-        found = False
-        for csv_file in csvs:
-            csv_path = os.path.join(root, csv_file)
-            pin, error = process_csv(csv_path, n_keys=n_keys, fps=fps)
-            if pin is not None and len(pin) == n_keys:
-                folder_pins[root] = pin
-                found = True
-                break  # Only need one valid PIN per folder
-            elif error:
-                folder_errors[root] = error
-        if not found and root not in folder_pins:
-            if root not in folder_errors:
-                folder_errors[root] = "No valid CSVs found"
-
-    for folder in sorted(set(list(folder_pins.keys()) + list(folder_errors.keys()))):
-        if folder in folder_pins:
-            print(f"{folder}:")
-            print(f"  Most likely PIN: {''.join(folder_pins[folder])}")
-        else:
-            print(f"{folder}: Could not find valid PIN - {folder_errors[folder]}")
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
