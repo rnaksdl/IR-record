@@ -259,6 +259,14 @@ def process_video(video_path, output_folder, video_idx, total_videos):
     centers_interp = interpolate_centers(ring_centers)
     centers_smooth = smooth_centers(centers_interp, window=9, poly=2)
     if len(centers_smooth) > 0:
+        # Save smoothed ring center trajectory as CSV
+        ring_center_csv_path = os.path.join(video_out_folder, f'{video_name}_ring_center.csv')
+        with open(ring_center_csv_path, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['frame', 'ring_x', 'ring_y'])
+            for i, (x, y) in enumerate(centers_smooth):
+                writer.writerow([i, x, y])
+
         initial = centers_smooth[0]
         x_disp = centers_smooth[:,0] - initial[0]
         y_disp = -(centers_smooth[:,1] - initial[1])  # Invert Y for plotting
@@ -273,6 +281,7 @@ def process_video(video_path, output_folder, video_idx, total_videos):
         plt.tight_layout()
         plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center.png'))
         plt.close()
+
 
     # 4. Find and plot 4 flat segments (zoomed in Y)
     for idx, track in enumerate(led_tracks):
