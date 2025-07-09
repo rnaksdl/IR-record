@@ -3,10 +3,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import csv
+from sklearn.cluster import KMeans
+from sklearn.mixture import GaussianMixture
 from scipy.signal import savgol_filter
 
-input_folder = './input'
-output_folder = 'outputhmm'
+input_folder = './jitter_vid'
+output_folder = 'output'
 os.makedirs(output_folder, exist_ok=True)
 
 def detect_leds_with_blue_or_purple_halo(image):
@@ -123,10 +125,8 @@ def process_video(video_path, output_folder, video_idx, total_videos):
 
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
     led_tracks = []
     ring_centers = []
-    frame_times = []
     frame_idx = 0
 
     while cap.isOpened():
@@ -185,10 +185,6 @@ def process_video(video_path, output_folder, video_idx, total_videos):
         else:
             ring_centers.append(None)
 
-        # Save frame timestamp
-        frame_time = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0  # seconds
-        frame_times.append(frame_time)
-
         # Draw and save frame
         frame_draw = draw_leds(frame.copy(), centers, ring_center=ring_centers[-1])
         frame_save_path = os.path.join(frames_folder, f'frame_{frame_idx:05d}.png')
@@ -206,12 +202,12 @@ def process_video(video_path, output_folder, video_idx, total_videos):
     os.makedirs(video_out_folder, exist_ok=True)
     with open(csv_path, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        header = ['frame', 'timestamp']
+        header = ['frame']
         for i in range(len(led_tracks)):
             header += [f'led{i+1}_x', f'led{i+1}_y']
         writer.writerow(header)
         for f in range(frame_idx):
-            row = [f, frame_times[f] if f < len(frame_times) else None]
+            row = [f]
             for track in led_tracks:
                 if f < len(track) and track[f] is not None:
                     row += [track[f][0], track[f][1]]
@@ -255,6 +251,14 @@ def process_video(video_path, output_folder, video_idx, total_videos):
     centers_interp = interpolate_centers(ring_centers)
     centers_smooth = smooth_centers(centers_interp, window=9, poly=2)
     if len(centers_smooth) > 0:
+        # Save smoothed ring center trajectory as CSV
+        ring_center_csv_path = os.path.join(video_out_folder, f'{video_name}_ring_center.csv')
+        with open(ring_center_csv_path, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['frame', 'ring_x', 'ring_y'])
+            for i, (x, y) in enumerate(centers_smooth):
+                writer.writerow([i, x, y])
+
         initial = centers_smooth[0]
         x_disp = centers_smooth[:,0] - initial[0]
         y_disp = -(centers_smooth[:,1] - initial[1])  # Invert Y for plotting
@@ -270,41 +274,132 @@ def process_video(video_path, output_folder, video_idx, total_videos):
         plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center.png'))
         plt.close()
 
-    # 4. Extract and save trajectory features for HMM or further analysis
-    # Features: frame, timestamp, x, y, velocity, direction, curvature
-    features_path = os.path.join(video_out_folder, 'ring_center_features.csv')
-    with open(features_path, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['frame', 'timestamp', 'x', 'y', 'velocity', 'direction', 'curvature'])
-        prev_x, prev_y, prev_time = None, None, None
-        prev_dx, prev_dy = None, None
-        for i in range(len(centers_smooth)):
-            x, y = centers_smooth[i]
-            timestamp = frame_times[i] if i < len(frame_times) else None
-            velocity = None
-            direction = None
-            curvature = None
-            if prev_x is not None and prev_y is not None and prev_time is not None and timestamp is not None:
-                dx = x - prev_x
-                dy = y - prev_y
-                dt = timestamp - prev_time
-                if dt > 0:
-                    velocity = np.sqrt(dx**2 + dy**2) / dt
-                direction = np.arctan2(dy, dx)
-                if prev_dx is not None and prev_dy is not None:
-                    # Angle between previous and current direction (curvature)
-                    dot = prev_dx * dx + prev_dy * dy
-                    norm1 = np.sqrt(prev_dx**2 + prev_dy**2)
-                    norm2 = np.sqrt(dx**2 + dy**2)
-                    if norm1 > 0 and norm2 > 0:
-                        cos_angle = np.clip(dot / (norm1 * norm2), -1.0, 1.0)
-                        curvature = np.arccos(cos_angle)
-            writer.writerow([i, timestamp, x, y, velocity, direction, curvature])
-            prev_dx = None if prev_x is None else x - prev_x
-            prev_dy = None if prev_y is None else y - prev_y
-            prev_x, prev_y, prev_time = x, y, timestamp
+        # --- Velocity calculation ---
+        if len(centers_smooth) > 1:
+            velocities = np.linalg.norm(np.diff(centers_smooth, axis=0), axis=1)
+            times = np.arange(1, len(centers_smooth))  # Frame numbers for velocity
 
-    # 5. Find and plot 4 flat segments (zoomed in Y)
+            # Plot velocity vs. time
+            plt.figure(figsize=(10, 5))
+            plt.plot(times, velocities, marker='o')
+            plt.xlabel('Frame Number (Time)')
+            plt.ylabel('Velocity (pixels/frame)')
+            plt.title('Velocity of Ring Center vs. Time')
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(os.path.join(video_out_folder, 'velocity_ring_center.png'))
+            plt.close()
+
+            # Plot velocity histogram for threshold tuning
+            plt.figure()
+            plt.hist(velocities, bins=50)
+            plt.xlabel('Velocity (pixels/frame)')
+            plt.ylabel('Count')
+            plt.title('Velocity Histogram')
+            plt.tight_layout()
+            plt.savefig(os.path.join(video_out_folder, 'velocity_histogram.png'))
+            plt.close()
+
+            velocities_reshape = velocities.reshape(-1, 1)
+
+            # --- KMeans clustering (2 clusters) ---
+            kmeans = KMeans(n_clusters=2, random_state=0).fit(velocities_reshape)
+            labels_kmeans = kmeans.labels_
+            cluster_means = [np.mean(velocities[labels_kmeans == i]) for i in range(2)]
+            not_moving_label = np.argmin(cluster_means)
+            not_moving_mask_kmeans = np.concatenate([[False], labels_kmeans == not_moving_label])
+
+            plt.figure(figsize=(8, 8))
+            plt.plot(x_disp, y_disp, color='lightgray', label='All')
+            plt.plot(x_disp[not_moving_mask_kmeans], y_disp[not_moving_mask_kmeans], 'o-', color='blue', label='Not moving (KMeans)')
+            plt.xlabel('X Displacement (pixels)')
+            plt.ylabel('Y Displacement (pixels)')
+            plt.title('Trajectory of Ring Center (Not Moving, KMeans)')
+            plt.grid(True)
+            plt.axis('equal')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_kmeans.png'))
+            plt.close()
+
+            # --- KMeans clustering (3 clusters, strictest) ---
+            kmeans3 = KMeans(n_clusters=3, random_state=0).fit(velocities_reshape)
+            labels_kmeans3 = kmeans3.labels_
+            cluster_means3 = [np.mean(velocities[labels_kmeans3 == i]) for i in range(3)]
+            not_moving_label3 = np.argmin(cluster_means3)
+            not_moving_mask_kmeans3 = np.concatenate([[False], labels_kmeans3 == not_moving_label3])
+
+            plt.figure(figsize=(8, 8))
+            plt.plot(x_disp, y_disp, color='lightgray', label='All')
+            plt.plot(x_disp[not_moving_mask_kmeans3], y_disp[not_moving_mask_kmeans3], 'o-', color='navy', label='Not moving (KMeans, strict)')
+            plt.xlabel('X Displacement (pixels)')
+            plt.ylabel('Y Displacement (pixels)')
+            plt.title('Trajectory of Ring Center (Not Moving, KMeans 3-cluster)')
+            plt.grid(True)
+            plt.axis('equal')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_kmeans3.png'))
+            plt.close()
+
+            # --- Gaussian Mixture Model clustering (2 clusters) ---
+            gmm = GaussianMixture(n_components=2, random_state=0).fit(velocities_reshape)
+            labels_gmm = gmm.predict(velocities_reshape)
+            gmm_means = [np.mean(velocities[labels_gmm == i]) for i in range(2)]
+            not_moving_label_gmm = np.argmin(gmm_means)
+            not_moving_mask_gmm = np.concatenate([[False], labels_gmm == not_moving_label_gmm])
+
+            plt.figure(figsize=(8, 8))
+            plt.plot(x_disp, y_disp, color='lightgray', label='All')
+            plt.plot(x_disp[not_moving_mask_gmm], y_disp[not_moving_mask_gmm], 'o-', color='green', label='Not moving (GMM)')
+            plt.xlabel('X Displacement (pixels)')
+            plt.ylabel('Y Displacement (pixels)')
+            plt.title('Trajectory of Ring Center (Not Moving, GMM)')
+            plt.grid(True)
+            plt.axis('equal')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_gmm.png'))
+            plt.close()
+
+            # --- Gaussian Mixture Model clustering (3 clusters, strictest) ---
+            gmm3 = GaussianMixture(n_components=3, random_state=0).fit(velocities_reshape)
+            labels_gmm3 = gmm3.predict(velocities_reshape)
+            gmm_means3 = [np.mean(velocities[labels_gmm3 == i]) for i in range(3)]
+            not_moving_label_gmm3 = np.argmin(gmm_means3)
+            not_moving_mask_gmm3 = np.concatenate([[False], labels_gmm3 == not_moving_label_gmm3])
+
+            plt.figure(figsize=(8, 8))
+            plt.plot(x_disp, y_disp, color='lightgray', label='All')
+            plt.plot(x_disp[not_moving_mask_gmm3], y_disp[not_moving_mask_gmm3], 'o-', color='darkgreen', label='Not moving (GMM, strict)')
+            plt.xlabel('X Displacement (pixels)')
+            plt.ylabel('Y Displacement (pixels)')
+            plt.title('Trajectory of Ring Center (Not Moving, GMM 3-cluster)')
+            plt.grid(True)
+            plt.axis('equal')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_gmm3.png'))
+            plt.close()
+
+            # --- Manual strict threshold ---
+            velocity_threshold = 0.5  # adjust as needed for strictness
+            not_moving_mask_manual = np.concatenate([[False], velocities < velocity_threshold])
+
+            plt.figure(figsize=(8, 8))
+            plt.plot(x_disp, y_disp, color='lightgray', label='All')
+            plt.plot(x_disp[not_moving_mask_manual], y_disp[not_moving_mask_manual], 'o-', color='red', label=f'Not moving (<{velocity_threshold})')
+            plt.xlabel('X Displacement (pixels)')
+            plt.ylabel('Y Displacement (pixels)')
+            plt.title('Trajectory of Ring Center (Strict Not Moving, Manual Threshold)')
+            plt.grid(True)
+            plt.axis('equal')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_strict.png'))
+            plt.close()
+
+    # 4. Find and plot 4 flat segments (zoomed in Y)
     for idx, track in enumerate(led_tracks):
         track_clean = [pt for pt in track if pt is not None]
         if len(track_clean) < 2:
@@ -339,12 +434,51 @@ def process_video(video_path, output_folder, video_idx, total_videos):
             plt.savefig(os.path.join(plots_folder, f'led{idx+1}_flat{seg_idx+1}.png'))
             plt.close()
 
+    # --- Calculate the center of the ring using all detected LEDs ---
+    # Build an array of shape (num_leds, num_frames, 2)
+    max_len = max(len(track) for track in led_tracks)
+    led_positions = []
+    for track in led_tracks:
+        arr = np.full((max_len, 2), np.nan)
+        for i, pt in enumerate(track):
+            if pt is not None:
+                arr[i] = pt
+        led_positions.append(arr)
+    led_positions = np.array(led_positions)  # shape: (num_leds, num_frames, 2)
+
+    # Calculate ring center for each frame as mean of all detected LEDs
+    ring_centers_all = np.nanmean(led_positions, axis=0)  # shape: (num_frames, 2)
+
+    # Plot the calculated ring center trajectory (optional)
+    plt.figure(figsize=(8, 8))
+    plt.plot(ring_centers_all[:,0], -ring_centers_all[:,1], marker='o')
+    plt.xlabel('X (pixels)')
+    plt.ylabel('Y (pixels, up is up)')
+    plt.title('Ring Center Trajectory (Mean of All LEDs)')
+    plt.grid(True)
+    plt.axis('equal')
+    plt.tight_layout()
+    plt.savefig(os.path.join(video_out_folder, 'ring_center_mean_of_leds.png'))
+    plt.close()
+
+    # --- Plot Y (up/down) motion of each LED over time ---
+    plt.figure(figsize=(10, 6))
+    for idx, arr in enumerate(led_positions):
+        plt.plot(np.arange(arr.shape[0]), arr[:,1], label=f'LED #{idx+1}')
+    plt.xlabel('Frame Number')
+    plt.ylabel('Y Position (pixels)')
+    plt.title('Up/Down (Y) Motion of Each LED Over Time')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(video_out_folder, 'leds_y_motion.png'))
+    plt.close()
+
+
 if __name__ == "__main__":
-    video_files = [fname for fname in os.listdir(input_folder)
-                  if fname.lower().endswith(('.mp4'))]
+    video_files = [fname for fname in os.listdir(input_folder) if fname.lower().endswith('.mp4')]
     total_videos = len(video_files)
     for idx, fname in enumerate(video_files, 1):
         video_path = os.path.join(input_folder, fname)
         process_video(video_path, output_folder, idx, total_videos)
     print("All videos processed.")
-
