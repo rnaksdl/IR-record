@@ -90,6 +90,51 @@ def remove_outlier_tracks(led_tracks, min_frames=10, min_disp=5):
         filtered.append(track)
     return filtered
 
+def remove_outliers_and_fit_circle(centers_xy):
+    """
+    Removes outlier LEDs that are far from the main LED ring
+    cluster and fits a circle to remaining inliers.
+    
+    Args:
+        centers_xy: List of (x, y) coordinates of detected LEDs
+        
+    Returns:
+        (xc, yc): Coordinates of the fitted circle center
+                  after outlier removal, or None if insufficient points
+    """
+    if len(centers_xy) < 3:
+        return None
+    
+    # Convert to numpy array
+    points = np.array(centers_xy)
+    
+    # Calculate initial center estimate (centroid)
+    centroid = np.mean(points, axis=0)
+    
+    # Calculate distances from each LED to the centroid
+    distances = np.sqrt(np.sum((points - centroid)**2, axis=1))
+    
+    # Calculate distance statistics for outlier detection
+    median_dist = np.median(distances)
+    # Use median absolute deviation (more robust than std dev)
+    mad = np.median(np.abs(distances - median_dist))
+    
+    # Define outliers as points more than a threshold away from the median distance
+    # A point is an outlier if it's too far from the estimated ring center
+    threshold = 2.0  # Adjust this threshold as needed (2.0 means 2x the median distance)
+    inlier_mask = distances <= median_dist * threshold
+    
+    # Only keep inliers
+    inliers = points[inlier_mask]
+    
+    # If we don't have enough points for circle fitting after outlier removal
+    if len(inliers) < 3:
+        # Fall back to using all points if too many were removed as outliers
+        return fit_circle(points[:, 0], points[:, 1])
+    
+    # Fit circle to inliers only
+    return fit_circle(inliers[:, 0], inliers[:, 1])
+
 def find_flat_segments(displacements, n_segments=4, min_length=10):
     displacements = np.array(displacements)
     isnan = np.isnan(displacements)
@@ -177,11 +222,10 @@ def process_video(video_path, output_folder, video_idx, total_videos):
                     new_track.append(centers_xy[j])
                     led_tracks.append(new_track)
         
-        # Estimate ring center by fitting a circle to detected LEDs
+        # Estimate ring center by fitting a circle to detected LEDs after removing outliers
         if len(centers_xy) >= 3:
-            xs = np.array([pt[0] for pt in centers_xy])
-            ys = np.array([pt[1] for pt in centers_xy])
-            fit = fit_circle(xs, ys)
+            # Use the new function to remove outliers and fit circle
+            fit = remove_outliers_and_fit_circle(centers_xy)
             ring_centers.append(fit)
         else:
             ring_centers.append(None)
@@ -241,7 +285,7 @@ def process_video(video_path, output_folder, video_idx, total_videos):
     plt.title('Displacement of Purple LEDs vs. Time (Raw)')
     plt.grid(True)
     plt.tight_layout()
-    plt.legend()
+    # plt.legend()
     plt.savefig(os.path.join(video_out_folder, 'displacement_raw.png'))
     plt.close()
 
@@ -318,7 +362,7 @@ def process_video(video_path, output_folder, video_idx, total_videos):
             plt.title('Trajectory of Ring Center (Not Moving, KMeans)')
             plt.grid(True)
             plt.axis('equal')
-            plt.legend()
+            # plt.legend()
             plt.tight_layout()
             plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_kmeans.png'))
             plt.close()
@@ -338,7 +382,7 @@ def process_video(video_path, output_folder, video_idx, total_videos):
             plt.title('Trajectory of Ring Center (Not Moving, KMeans 3-cluster)')
             plt.grid(True)
             plt.axis('equal')
-            plt.legend()
+            # plt.legend()
             plt.tight_layout()
             plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_kmeans3.png'))
             plt.close()
@@ -358,7 +402,7 @@ def process_video(video_path, output_folder, video_idx, total_videos):
             plt.title('Trajectory of Ring Center (Not Moving, GMM)')
             plt.grid(True)
             plt.axis('equal')
-            plt.legend()
+            # plt.legend()
             plt.tight_layout()
             plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_gmm.png'))
             plt.close()
@@ -378,7 +422,7 @@ def process_video(video_path, output_folder, video_idx, total_videos):
             plt.title('Trajectory of Ring Center (Not Moving, GMM 3-cluster)')
             plt.grid(True)
             plt.axis('equal')
-            plt.legend()
+            # plt.legend()
             plt.tight_layout()
             plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_gmm3.png'))
             plt.close()
@@ -395,7 +439,7 @@ def process_video(video_path, output_folder, video_idx, total_videos):
             plt.title('Trajectory of Ring Center (Strict Not Moving, Manual Threshold)')
             plt.grid(True)
             plt.axis('equal')
-            plt.legend()
+            # plt.legend()
             plt.tight_layout()
             plt.savefig(os.path.join(video_out_folder, 'trajectory_ring_center_not_moving_strict.png'))
             plt.close()
@@ -477,7 +521,7 @@ def process_video(video_path, output_folder, video_idx, total_videos):
     plt.xlabel('Frame Number')
     plt.ylabel('Y Position (pixels)')
     plt.title('Up/Down (Y) Motion of Each LED Over Time')
-    plt.legend()
+    # plt.legend()
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(os.path.join(video_out_folder, 'leds_y_motion.png'))
