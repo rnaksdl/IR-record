@@ -776,32 +776,15 @@ def process_csv_trajectory(csv_path, report_dir):
     if is_same_digit:
         print(f"  PRE-CLUSTERING CHECK: All points are within a {SAME_DIGIT_BOX_SIZE}x{SAME_DIGIT_BOX_SIZE} pixel box - likely same-digit PIN")
         
-        # Instead of immediately assuming all digits are the same,
-        # Find the closest keypad digit to the mean point position
-        mean_point = np.mean(filtered_points, axis=0)
-        distances = [np.linalg.norm(mean_point - pin_coord) for pin_coord in PINPAD_COORDS]
-        closest_idx = np.argmin(distances)
-        closest_digit = PINPAD_DIGITS[closest_idx]
+        # MODIFIED: Instead of finding closest digit, add all possible repeated digit PINs
+        print(f"  Adding all possible repeated digit PINs as candidates")
         
-        print(f"  Closest digit to mean position: {closest_digit}")
-        
-        # Add this digit repeated as the primary candidate
-        same_digit_pin = closest_digit * PIN_LENGTH
-        pin_scores.append((same_digit_pin, -3.0))
-        
-        # Add other repeating digits with lower scores
+        # Add each possible repeated digit as a candidate (1111, 2222, etc.)
         for digit in PINPAD_DIGITS:
-            if digit != closest_digit:
-                repeat_pin = digit * PIN_LENGTH
-                # Score based on distance from mean point
-                digit_idx = PINPAD_DIGIT_TO_IDX[digit]
-                distance = np.linalg.norm(mean_point - PINPAD_COORDS[digit_idx])
-                closest_distance = np.linalg.norm(mean_point - PINPAD_COORDS[closest_idx])
-                relative_distance = distance / closest_distance if closest_distance > 0 else 2.0
-                
-                # Only add plausible alternatives
-                if relative_distance < 2.0:
-                    pin_scores.append((repeat_pin, -3.0 + relative_distance))
+            repeat_pin = digit * PIN_LENGTH
+            # Assign scores from best to worst (0 to 9 in ascending order, higher digits = higher score value)
+            score_value = -3.0 + 0.1 * PINPAD_DIGIT_TO_IDX[digit]
+            pin_scores.append((repeat_pin, score_value))
         
         # Use mean point as center for visualization
         best_centers_ordered = np.mean(filtered_points, axis=0).reshape(1, 2)
