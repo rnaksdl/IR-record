@@ -960,24 +960,33 @@ def process_csv_trajectory(csv_path, report_dir):
         pin_scores = pin_scores[:cutoff_idx]
         print(f"  Using dynamic score-based cutoff: Keeping {len(pin_scores)} candidates")
     
-    # Step 9: Display top results
-    print("\nTop PIN candidates:")
-    for pin, score in pin_scores[:min(10, len(pin_scores))]:
-        print(f"  {pin}: {score:.4f}")
+    # Step 9: Apply pattern-based filtering and prepare final results
+    if pin_scores:
+        if not is_same_digit:
+            # Filter to keep only positive scores when NOT in same-digit case
+            filtered_scores = [ps for ps in pin_scores if ps[1] > 0]
+            print(f"  Filtered to {len(filtered_scores)} candidates with positive scores only")
+        else:
+            # For same-digit pattern, keep all scores including negative ones
+            filtered_scores = pin_scores
+            print(f"  Same-digit pattern detected, keeping all {len(filtered_scores)} candidates including pattern-based ones")
+
+        # Step 10: Display top results from filtered scores
+        print("\nTop PIN candidates:")
+        for pin, score in filtered_scores[:min(10, len(filtered_scores))]:
+            print(f"  {pin}: {score:.4f}")
+    else:
+        filtered_scores = []
     
-    # Filter to keep only positive scores
-    positive_scores = [ps for ps in pin_scores if ps[1] > 0]
-    print(f"  Filtered to {len(positive_scores)} candidates with positive scores only")
-    
-    # Step 10: Plot trajectory on PIN pad for top candidates
-    if best_centers_ordered is not None and len(best_centers_ordered) > 0:
+    # Step 11: Plot trajectory on PIN pad for top candidates
+    if best_centers_ordered is not None and len(best_centers_ordered) > 0 and filtered_scores:
         plot_trajectory_on_pinpad(
-            best_centers_ordered, positive_scores[:5] if positive_scores else [],
+            best_centers_ordered, filtered_scores[:5] if filtered_scores else [],
             os.path.join(video_dir, 'trajectory_mapping.png'),
-            f'Trajectory Matching: Top PIN {positive_scores[0][0] if positive_scores else "N/A"}'
+            f'Trajectory Matching: Top PIN {filtered_scores[0][0] if filtered_scores else "N/A"}'
         )
     
-    return positive_scores
+    return filtered_scores
 
 def main():
     """Main function to process all CSV files"""
