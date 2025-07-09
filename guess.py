@@ -3,23 +3,21 @@ import glob
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans, DBSCAN
+from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from itertools import product, permutations
+from itertools import product
 import time
 import datetime
 import shutil
 import webbrowser
-from collections import Counter
 
 # --- USER CONFIGURABLE PARAMETERS ---
 PIN_LENGTH = 4
 OUTPUT_DIR = './output'
 REPORT_FOLDER = './report'
+TIME_WEIGHT = 0.5  # Weight for time dimension in clustering (0-1)
 
-# IMPORTANT: Adjust this value to control same-digit PIN detection
-# Lower values (like 50 or 60) make detection more sensitive
-# Higher values (like 80 or 100) are more conservative
+# Keep the box size parameter for detection purposes, but don't use it for scoring
 SAME_DIGIT_BOX_SIZE = 80  # Default was 80, try lowering to 50-60 if needed
 
 # Button dimensions
@@ -103,174 +101,34 @@ def filter_by_speed(points, speeds, frame_indices=None):
     else:
         return filtered_points, np.where(slow_mask)[0]
 
-def detect_temporal_patterns(points, frame_indices):
+def time_aware_clustering(points, frame_indices, n_clusters=4, time_weight=TIME_WEIGHT):
     """
-    Analyze temporal patterns in the point sequence
-    Returns possible PINs with confidence scores
+    Perform clustering in both space and time dimensions
+    This helps distinguish points at the same location but at different times
     """
-    if len(points) < 10:  # Need sufficient points but not too strict
-        return []
+    if len(points) < n_clusters:
+        return None, None, None
     
-    # Create a time-ordered sequence
-    order = np.argsort(frame_indices)
-    ordered_points = points[order]
+    # Create a space-time feature matrix
+    # Normalize spatial and temporal components
+    scaler_space = StandardScaler()
+    scaler_time = StandardScaler()
     
-    # Use DBSCAN to identify clusters without specifying count
-    db = DBSCAN(eps=15.0, min_samples=3)
-    db_labels = db.fit_predict(ordered_points)
+    points_scaled = scaler_space.fit_transform(points)
+    time_scaled = scaler_time.fit_transform(frame_indices.reshape(-1, 1))
     
-    # Get unique clusters (ignoring noise points with label -1)
-    unique_clusters = np.unique(db_labels)
-    unique_clusters = unique_clusters[unique_clusters >= 0]
+    # Combine space and time with appropriate weighting
+    # Higher time_weight means more emphasis on temporal separation
+    space_time_features = np.hstack([points_scaled, time_weight * time_scaled])
     
-    if len(unique_clusters) < 2:  # Need at least 2 clusters
-        return []
+    # Perform KMeans clustering
+    kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init=10)
+    labels = kmeans.fit_predict(space_time_features)
     
-    # Calculate cluster centers and sizes
-    cluster_centers = []
-    cluster_sizes = []
-    for c in unique_clusters:
-        cluster_points = ordered_points[db_labels == c]
-        cluster_centers.append(np.mean(cluster_points, axis=0))
-        cluster_sizes.append(len(cluster_points))
+    # Calculate cluster centers, times, and sizes
+    centers, times, sizes = get_cluster_centers_and_times(labels, points, frame_indices)
     
-    # Find nearest digit for each cluster
-    closest_digits = []
-    for center in cluster_centers:
-        distances = [np.linalg.norm(center - pin_coord) for pin_coord in PINPAD_COORDS]
-        closest_digit = PINPAD_DIGITS[np.argmin(distances)]
-        closest_digits.append(closest_digit)
-    
-    # Create a temporal sequence of cluster visits
-    temporal_sequence = []
-    for point_idx, point in enumerate(ordered_points):
-        if db_labels[point_idx] >= 0:  # Skip noise
-            cluster_idx = np.where(unique_clusters == db_labels[point_idx])[0][0]
-            temporal_sequence.append(closest_digits[cluster_idx])
-    
-    # Analyze temporal sequence for patterns
-    candidates = []
-    
-    # Check for alternating patterns (like 2121)
-    if len(temporal_sequence) >= 6:  # Reduced threshold
-        # Count consecutive pairs in the sequence
-        pairs = [temporal_sequence[i:i+2] for i in range(0, len(temporal_sequence)-1)]
-        if len(pairs) > 0:  # Make sure there are pairs to analyze
-            pair_counter = Counter(["".join(p) for p in pairs])
-            
-            # Find the most common alternating pairs
-            common_pairs = pair_counter.most_common(5)
-            
-            for pair, count in common_pairs:
-                if count >= 2:  # Reduced threshold
-                    # Create alternating pattern
-                    alt_pattern = pair[0] + pair[1] + pair[0] + pair[1]
-                    # Also consider the reverse order
-                    rev_pattern = pair[1] + pair[0] + pair[1] + pair[0]
-                    
-                    # Score based on frequency in the sequence
-                    normalized_count = count / len(pairs)  # Changed variable name from pair_score
-                    candidates.append((alt_pattern, -2.5 * normalized_count))
-                    candidates.append((rev_pattern, -2.0 * normalized_count))
-    
-    # Rest of the function remains the same
-    # ... (code for repeated digit patterns and N-gram analysis)
-    
-    return candidates
-
-def identify_repeated_digit_clusters(clusters, sizes, closest_digits):
-    """
-    Analyze cluster sizes to identify repeated digits
-    Creates multiple mappings for how clusters might map to digits in a PIN
-    """
-    candidates = []
-    
-    # Calculate statistical properties
-    mean_size = np.mean(sizes)
-    std_size = np.std(sizes) if len(sizes) > 1 else 0
-    
-    # Case 1: One cluster is significantly larger than others
-    for i, size in enumerate(sizes):
-        # If a cluster is >30% larger than mean or >1.0 std deviations above
-        if size > mean_size * 1.3 or (std_size > 0 and size > mean_size + 1.0 * std_size):
-            digit = closest_digits[i]
-            
-            # Generate patterns with this digit repeated at different positions
-            for positions in [[0,1], [0,2], [0,3], [1,2], [1,3], [2,3]]:
-                # Create a list of remaining positions
-                remaining_pos = [j for j in range(PIN_LENGTH) if j not in positions]
-                
-                # Fill remaining positions with other digits
-                for other_digits in permutations([d for d in closest_digits if d != digit], len(remaining_pos)):
-                    pattern = [""] * PIN_LENGTH
-                    for pos in positions:
-                        pattern[pos] = digit
-                    for j, pos in enumerate(remaining_pos):
-                        if j < len(other_digits):
-                            pattern[pos] = other_digits[j]
-                    
-                    # Fill any remaining positions with random digits
-                    for k in range(PIN_LENGTH):
-                        if pattern[k] == "":
-                            pattern[k] = closest_digits[0]  # Default to first digit
-                    
-                    pin = ''.join(pattern)
-                    # Score based on how extreme the size difference is
-                    score_factor = (size / mean_size) if mean_size > 0 else 1.5
-                    candidates.append((pin, -2.0 * score_factor))
-                    
-                    # Extra boost for middle-position repeats (like in 1990)
-                    if positions == [1,2]:  # Two repeats in the middle
-                        candidates.append((pin, -2.2 * score_factor))
-    
-    # Case 2: Special handling for exactly 3 clusters (possible 4-digit PIN with one digit repeated)
-    if len(clusters) == 3:
-        # Try each possible position for the repeated digit
-        for d1_idx in range(len(closest_digits)):
-            for d2_idx in range(len(closest_digits)):
-                if d2_idx == d1_idx:
-                    continue
-                for d3_idx in range(len(closest_digits)):
-                    if d3_idx == d1_idx or d3_idx == d2_idx:
-                        continue
-                    
-                    # Try repeating each digit in different positions
-                    for repeat_pos in range(3):  # 0=first, 1=middle, 2=last position to start repeat
-                        # Create a PIN with one digit repeated consecutively
-                        pattern = []
-                        digits_used = [d1_idx, d2_idx, d3_idx]
-                        
-                        for i in range(PIN_LENGTH):
-                            if i == repeat_pos or i == repeat_pos + 1:
-                                pattern.append(closest_digits[d1_idx])  # Repeated digit
-                            elif i < repeat_pos:
-                                pattern.append(closest_digits[d2_idx])  # Digits before repeat
-                            else:
-                                pattern.append(closest_digits[d3_idx])  # Digits after repeat
-                        
-                        pin = ''.join(pattern)
-                        
-                        # Give extra boost to middle position repeat patterns
-                        if repeat_pos == 1:  # Middle position repeat (like 1990)
-                            candidates.append((pin, -2.2))
-                        else:
-                            candidates.append((pin, -1.8))
-    
-    # Case 3: Special handling for exactly 2 clusters (possible 4-digit PIN with multiple digits repeated)
-    if len(clusters) == 2:
-        d1, d2 = closest_digits[0], closest_digits[1]
-        
-        # Generate all possible 4-digit combinations of these 2 digits
-        for pattern in product([0, 1], repeat=PIN_LENGTH):
-            pin = ''.join([closest_digits[p] for p in pattern])
-            
-            # Boost score for alternating patterns (0101 or 1010)
-            if pattern == (0, 1, 0, 1) or pattern == (1, 0, 1, 0):
-                candidates.append((pin, -2.2))  # Stronger boost for alternating
-            else:
-                candidates.append((pin, -1.5))  # Regular boost for other combinations
-    
-    return candidates
+    return centers, times, sizes
 
 def fit_translation_scaling(A, B):
     """
@@ -354,6 +212,12 @@ def plot_trajectory_on_pinpad(centers_ordered, top_pins, out_path, title):
                      label="Observed trajectory")
             plt.scatter(transformed_centers[:,0], transformed_centers[:,1], 
                         color='red', s=80, edgecolor='white', alpha=0.8, zorder=10)
+            
+            # Add digit sequence numbers
+            for i, (x, y) in enumerate(transformed_centers):
+                plt.annotate(f"{i+1}", xy=(x, y), xytext=(-5, 5), 
+                            textcoords='offset points', fontsize=10, 
+                            color='white', fontweight='bold')
 
     plt.title(title)
     plt.grid(False)
@@ -363,7 +227,7 @@ def plot_trajectory_on_pinpad(centers_ordered, top_pins, out_path, title):
     plt.savefig(out_path)
     plt.close()
 
-def generate_individual_html_report(video_name, pin_scores, report_dir):
+def generate_individual_html_report(video_name, pin_scores, is_same_digit, report_dir):
     """Generate an HTML report for a single video"""
     report_path = os.path.join(report_dir, f"{video_name}_report.html")
     
@@ -457,14 +321,11 @@ def generate_individual_html_report(video_name, pin_scores, report_dir):
             overflow-y: auto;
             margin-bottom: 30px;
         }}
-        .alternating-pattern {{
-            background-color: #e8f7f3;
+        .same-digit {{
+            background-color: #ffe8e8;
         }}
         .repeated-digit {{
             background-color: #f2e8f7;
-        }}
-        .same-digit {{
-            background-color: #ffe8e8;
         }}
     </style>
 </head>
@@ -497,17 +358,14 @@ def generate_individual_html_report(video_name, pin_scores, report_dir):
         description = ""
         row_class = ""
         
-        # Detect patterns in the PIN
+        # Detect patterns in the PIN (for highlighting purposes only)
         if len(set(pin)) == 1:
             description = "Same digit repeated four times"
             row_class = "same-digit"
         elif pin[0] == pin[2] and pin[1] == pin[3]:
             description = "Alternating pattern (XYXY)"
-            row_class = "alternating-pattern"
         elif pin == pin[::-1]:
             description = "Palindrome pattern"
-        elif score < 0:
-            description = "Special pattern detected with high confidence"
         elif pin.count(pin[0]) > 1 or pin.count(pin[1]) > 1 or pin.count(pin[2]) > 1:
             description = "Contains repeated digits"
             row_class = "repeated-digit"
@@ -536,7 +394,7 @@ def generate_individual_html_report(video_name, pin_scores, report_dir):
         html += f"""
     <h2>Trajectory Visualization</h2>
     <img class="trajectory-image" src="{os.path.basename(report_img_path)}" alt="Trajectory plot for {video_name}">
-    <p>The blue line represents the ideal path for the top PIN candidate. The red dashed line shows the detected trajectory after transformation.</p>
+    <p>The blue line represents the ideal path for the top PIN candidate. The red dashed line shows the detected trajectory after transformation. Numbers indicate the sequence of detected key presses.</p>
 """
     
     # Close HTML document
@@ -558,7 +416,7 @@ def generate_individual_html_report(video_name, pin_scores, report_dir):
     
     return os.path.basename(report_path)
 
-def generate_main_html_report(results, report_dir, video_reports):
+def generate_main_html_report(results, pattern_info, report_dir, video_reports):
     """Generate the main HTML report summarizing all videos"""
     report_path = os.path.join(report_dir, 'index.html')
     
@@ -659,9 +517,6 @@ def generate_main_html_report(results, report_dir, video_reports):
         .same-digit {
             background-color: #ffe8e8;
         }
-        .alternating-pattern {
-            background-color: #e8f7f3;
-        }
         .config-info {
             background-color: #f9f9f9;
             padding: 15px;
@@ -681,8 +536,8 @@ def generate_main_html_report(results, report_dir, video_reports):
     
     <div class="config-info">
         <h3>Configuration Parameters</h3>
-        <p><span class="config-param">SAME_DIGIT_BOX_SIZE</span>: """ + str(SAME_DIGIT_BOX_SIZE) + """ pixels</p>
-        <p>This parameter controls the size threshold for detecting same-digit PINs. Lower values make the detection more sensitive.</p>
+        <p><span class="config-param">TIME_WEIGHT</span>: """ + str(TIME_WEIGHT) + """ - Controls emphasis on time vs. space in clustering</p>
+        <p><span class="config-param">SAME_DIGIT_BOX_SIZE</span>: """ + str(SAME_DIGIT_BOX_SIZE) + """ pixels - For same-digit pattern detection</p>
     </div>
     
     <h2>Videos Analyzed</h2>
@@ -706,12 +561,10 @@ def generate_main_html_report(results, report_dir, video_reports):
             # Get top 5 PINs for summary
             top_5_pins = ", ".join([ps[0] for ps in pin_scores[:5]])
             
-            # Add special highlighting for patterns
+            # Add special highlighting for repeated digits (visual only)
             row_class = ""
             if len(set(top_pin)) == 1:  # All same digit
                 row_class = "class=\"same-digit\""
-            elif top_pin[0] == top_pin[2] and top_pin[1] == top_pin[3]:  # Alternating
-                row_class = "class=\"alternating-pattern\""
             
             html += f"""
         <tr {row_class}>
@@ -726,7 +579,7 @@ def generate_main_html_report(results, report_dir, video_reports):
     </table>
     
     <div class="timestamp">
-        <p>Analysis powered by Trajectory-Based PIN Detection</p>
+        <p>Analysis powered by Time-Aware Trajectory PIN Detection</p>
     </div>
 </body>
 </html>
@@ -739,7 +592,7 @@ def generate_main_html_report(results, report_dir, video_reports):
     print(f"Main HTML report generated at: {report_path}")
 
 def process_csv_trajectory(csv_path, report_dir):
-    """Process a CSV file with advanced trajectory analysis and smart score-based cutoff"""
+    """Process a CSV file using trajectory matching with time-aware clustering"""
     video_dir = os.path.dirname(csv_path)
     video_name = os.path.basename(video_dir)
     os.makedirs(report_dir, exist_ok=True)
@@ -758,7 +611,7 @@ def process_csv_trajectory(csv_path, report_dir):
     
     if points.shape[0] == 0:
         print(f"Warning: No valid points in {csv_path}. Skipping.")
-        return []
+        return [], False
     
     # Step 2: Speed filtering - keep only slow points (potential keystrokes)
     speeds = calculate_speeds(points)
@@ -766,126 +619,81 @@ def process_csv_trajectory(csv_path, report_dir):
     
     print(f"  Filtered {len(points)} points to {len(filtered_points)} slow points")
     
-    # Initialize pin_scores
-    pin_scores = []
+    # Initialize variables
     best_centers_ordered = None
     
-    # Step 3: Check for all-same-digit PIN pattern using configurable box size
-    is_same_digit = are_all_points_close(filtered_points)  # Uses global SAME_DIGIT_BOX_SIZE
+    # Step 3: Check for all-same-digit PIN pattern (for information only)
+    is_same_digit = are_all_points_close(filtered_points)  
     
     if is_same_digit:
-        print(f"  PRE-CLUSTERING CHECK: All points are within a {SAME_DIGIT_BOX_SIZE}x{SAME_DIGIT_BOX_SIZE} pixel box - likely same-digit PIN")
+        print(f"  DETECTED: All points are within a {SAME_DIGIT_BOX_SIZE}x{SAME_DIGIT_BOX_SIZE} pixel box - likely same-digit PIN")
+        print(f"  Note: Using trajectory matching only for scoring")
         
-        # MODIFIED: Instead of finding closest digit, add all possible repeated digit PINs
-        print(f"  Adding all possible repeated digit PINs as candidates")
-        
-        # Add each possible repeated digit as a candidate (1111, 2222, etc.)
-        for digit in PINPAD_DIGITS:
-            repeat_pin = digit * PIN_LENGTH
-            # Assign scores from best to worst (0 to 9 in ascending order, higher digits = higher score value)
-            score_value = -3.0 + 0.1 * PINPAD_DIGIT_TO_IDX[digit]
-            pin_scores.append((repeat_pin, score_value))
-        
-        # Use mean point as center for visualization
+        # We'll just use the mean point as center for visualization in this case
         best_centers_ordered = np.mean(filtered_points, axis=0).reshape(1, 2)
-    else:
-        # Step 4: First check for temporal patterns (zigzag, repeats)
-        temporal_candidates = detect_temporal_patterns(filtered_points, filtered_frames)
-        if temporal_candidates:
-            print(f"  DETECTED TEMPORAL PATTERNS: {len(temporal_candidates)} candidates")
-            pin_scores.extend(temporal_candidates)
+    
+    # Step 4: Try time-aware clustering with different k values
+    if not is_same_digit or best_centers_ordered is None:
+        # Try time-aware clustering first with PIN_LENGTH clusters (typically 4)
+        centers, times, sizes = time_aware_clustering(filtered_points, filtered_frames, n_clusters=PIN_LENGTH)
         
-        # Step 5: Try clustering with different k values
-        for k in [4, 3, 2]:
-            if k > len(filtered_points) // 5:
-                continue  # Skip if too few points
-                
-            scaler = StandardScaler()
-            filtered_points_scaled = scaler.fit_transform(filtered_points)
-            kmeans = KMeans(n_clusters=k, random_state=0, n_init=10)
-            labels = kmeans.fit_predict(filtered_points_scaled)
-            
-            # Get cluster centers, times, and sizes
-            centers, times, sizes = get_cluster_centers_and_times(labels, filtered_points, filtered_frames)
+        if centers is not None and len(centers) == PIN_LENGTH:
+            print(f"  Using time-aware clustering: Found {len(centers)} centers")
+            # Sort by time
             order = np.argsort(times)
             centers_ordered = centers[order]
-            sizes_ordered = sizes[order]
-            
-            print(f"  Using k={k}: Found {len(centers_ordered)} centers")
-            
-            # Store best centers for visualization
-            if best_centers_ordered is None:
-                best_centers_ordered = centers_ordered
-            
-            # Find closest digits to each cluster center
-            closest_digits = []
-            for center in centers:
-                distances = [np.linalg.norm(center - pin_coord) for pin_coord in PINPAD_COORDS]
-                closest_digit = PINPAD_DIGITS[np.argmin(distances)]
-                closest_digits.append(closest_digit)
-            
-            # Step 6: For k < 4, identify potential repeated digits
-            if k < 4:
-                repeat_candidates = identify_repeated_digit_clusters(centers, sizes, closest_digits)
-                pin_scores.extend(repeat_candidates)
+            best_centers_ordered = centers_ordered
+        else:
+            # Fall back to standard clustering methods if time-aware clustering doesn't work well
+            print("  Falling back to standard clustering")
+            for k in [4, 3, 2]:
+                if k > len(filtered_points) // 5:
+                    continue  # Skip if too few points
                 
-                # Special handling for common patterns without hardcoding
-                if k == 2 and len(closest_digits) == 2:
-                    d1, d2 = closest_digits
-                    # Test for alternating patterns
-                    alt_pattern = d1 + d2 + d1 + d2
-                    rev_pattern = d2 + d1 + d2 + d1
-                    pin_scores.append((alt_pattern, -2.2))  # Standard boost
-                    pin_scores.append((rev_pattern, -2.0))  # Slightly lower boost
+                scaler = StandardScaler()
+                filtered_points_scaled = scaler.fit_transform(filtered_points)
+                kmeans = KMeans(n_clusters=k, random_state=0, n_init=10)
+                labels = kmeans.fit_predict(filtered_points_scaled)
                 
-                # Special handling for 3 clusters - might be patterns with one repeat
-                if k == 3 and len(closest_digits) == 3:
-                    # Try various positions for repeated digits
-                    for first in closest_digits:
-                        for middle in closest_digits:
-                            for last in closest_digits:
-                                # Middle position repeats
-                                pin = first + middle + middle + last
-                                pin_scores.append((pin, -2.2))
-        
-        # If we still don't have centers, skip this video
-        if best_centers_ordered is None:
-            print(f"  WARNING: Could not find valid clustering for {video_name}")
-            return []
-        
-        # Step 7: Now perform trajectory matching for all possible PINs
-        print("  Generating PIN candidates using trajectory matching...")
-        
-        # Skip PINs we've already identified through special patterns
-        existing_pins = set(pin for pin, _ in pin_scores)
-        
-        # Trajectory matching for remaining PINs
-        trajectory_scores = []
-        
-        # Process all possible 4-digit PINs
-        for pin in [''.join(p) for p in product(PINPAD_DIGITS, repeat=PIN_LENGTH)]:
-            if pin in existing_pins:
-                continue
+                # Get cluster centers, times, and sizes
+                centers, times, sizes = get_cluster_centers_and_times(labels, filtered_points, filtered_frames)
+                order = np.argsort(times)
+                centers_ordered = centers[order]
                 
-            try:
-                pin_indices = [PINPAD_DIGIT_TO_IDX[d] for d in pin]
-                pin_coords = PINPAD_COORDS[pin_indices]
+                print(f"  Using standard k={k}: Found {len(centers_ordered)} centers")
                 
-                # Calculate trajectory matching score
-                error, _ = fit_translation_scaling(best_centers_ordered, pin_coords)
-                trajectory_scores.append((pin, error))
-                
-            except Exception as e:
-                print(f"  Error scoring PIN {pin}: {e}")
-        
-        # Sort trajectory scores
-        trajectory_scores.sort(key=lambda x: x[1])
-        
-        # Combine all scores and sort
-        pin_scores.extend(trajectory_scores)
-        pin_scores.sort(key=lambda x: x[1])
+                # Store best centers for visualization
+                if best_centers_ordered is None:
+                    best_centers_ordered = centers_ordered
     
-    # Step 8: Apply dynamic score-based cutoff
+    # If we still don't have centers, skip this video
+    if best_centers_ordered is None:
+        print(f"  WARNING: Could not find valid clustering for {video_name}")
+        return [], is_same_digit
+    
+    # Step 5: Perform trajectory matching for all possible PINs
+    print("  Generating PIN candidates using trajectory matching...")
+    
+    # Trajectory matching for all PINs
+    pin_scores = []
+    
+    # Process all possible 4-digit PINs
+    for pin in [''.join(p) for p in product(PINPAD_DIGITS, repeat=PIN_LENGTH)]:
+        try:
+            pin_indices = [PINPAD_DIGIT_TO_IDX[d] for d in pin]
+            pin_coords = PINPAD_COORDS[pin_indices]
+            
+            # Calculate trajectory matching score
+            error, _ = fit_translation_scaling(best_centers_ordered, pin_coords)
+            pin_scores.append((pin, error))
+            
+        except Exception as e:
+            print(f"  Error scoring PIN {pin}: {e}")
+    
+    # Sort trajectory scores
+    pin_scores.sort(key=lambda x: x[1])
+    
+    # Step 6: Apply dynamic score-based cutoff
     if pin_scores:
         # Get the best score and statistics
         best_score = pin_scores[0][1]
@@ -895,81 +703,54 @@ def process_csv_trajectory(csv_path, report_dir):
         score_mean = np.mean(all_scores)
         score_std = np.std(all_scores)
         
-        # Different cutoff strategies based on score distribution
-        if best_score < 0:
-            # For special pattern scores (negative scores)
-            
-            # Find where scores become positive
-            first_positive_idx = next((i for i, (_, s) in enumerate(pin_scores) if s > 0), len(pin_scores))
-            
-            # Keep all negative scores plus some buffer into positive scores
-            buffer_size = min(20, len(pin_scores) - first_positive_idx)
-            cutoff_idx = first_positive_idx + buffer_size
-            
-            # If we have special patterns, always show at least 15 candidates
-            cutoff_idx = max(15, cutoff_idx)
-            
-        else:
-            # For standard scores (all positive), use multiple threshold approaches
-            
-            # 1. Significant jump detection - find where scores start to jump significantly
-            jump_idx = len(pin_scores)
-            last_score = best_score
-            score_range = max(0.1, best_score)  # Baseline for calculating jumps
-            
-            for i, (_, score) in enumerate(pin_scores[1:], 1):
-                # If score jumps by more than 20% of the best score or 0.05 absolute
-                jump_threshold = max(0.05, score_range * 0.20)
-                if score - last_score > jump_threshold:
-                    jump_idx = i
-                    break
-                last_score = score
-            
-            # 2. Absolute threshold - scores within reasonable range of best
-            absolute_threshold = best_score + min(0.5, best_score)  # Either +0.5 or 2x best score
-            absolute_idx = next((i for i, (_, s) in enumerate(pin_scores) if s > absolute_threshold), len(pin_scores))
-            
-            # 3. Statistical threshold - scores within statistical bounds
-            stat_threshold = best_score + 2 * score_std if score_std > 0 else best_score * 2
-            stat_idx = next((i for i, (_, s) in enumerate(pin_scores) if s > stat_threshold), len(pin_scores))
-            
-            # 4. Hard minimum threshold - always show at least 10 candidates
-            min_candidates = 10
-            
-            # Take the minimum of all approaches, but ensure minimum count
-            cutoff_idx = max(min_candidates, min(jump_idx, absolute_idx, stat_idx))
+        # Use multiple threshold approaches
+        # 1. Significant jump detection
+        jump_idx = len(pin_scores)
+        last_score = best_score
+        score_range = max(0.1, best_score)  # Baseline for calculating jumps
+        
+        for i, (_, score) in enumerate(pin_scores[1:], 1):
+            # If score jumps by more than 20% of the best score or 0.05 absolute
+            jump_threshold = max(0.05, score_range * 0.20)
+            if score - last_score > jump_threshold:
+                jump_idx = i
+                break
+            last_score = score
+        
+        # 2. Absolute threshold - scores within reasonable range of best
+        absolute_threshold = best_score + min(0.5, best_score)
+        absolute_idx = next((i for i, (_, s) in enumerate(pin_scores) if s > absolute_threshold), len(pin_scores))
+        
+        # 3. Statistical threshold - scores within statistical bounds
+        stat_threshold = best_score + 2 * score_std if score_std > 0 else best_score * 2
+        stat_idx = next((i for i, (_, s) in enumerate(pin_scores) if s > stat_threshold), len(pin_scores))
+        
+        # 4. Hard minimum threshold - always show at least 10 candidates
+        min_candidates = 10
+        
+        # Take the minimum of all approaches, but ensure minimum count
+        cutoff_idx = max(min_candidates, min(jump_idx, absolute_idx, stat_idx))
         
         # Apply the cutoff
         pin_scores = pin_scores[:cutoff_idx]
         print(f"  Using dynamic score-based cutoff: Keeping {len(pin_scores)} candidates")
     
-    # Step 9: Apply pattern-based filtering and prepare final results
-    if pin_scores:
-        if not is_same_digit:
-            # Filter to keep only positive scores when NOT in same-digit case
-            filtered_scores = [ps for ps in pin_scores if ps[1] > 0]
-            print(f"  Filtered to {len(filtered_scores)} candidates with positive scores only")
-        else:
-            # For same-digit pattern, keep all scores including negative ones
-            filtered_scores = pin_scores
-            print(f"  Same-digit pattern detected, keeping all {len(filtered_scores)} candidates including pattern-based ones")
-
-        # Step 10: Display top results from filtered scores
-        print("\nTop PIN candidates:")
-        for pin, score in filtered_scores[:min(10, len(filtered_scores))]:
-            print(f"  {pin}: {score:.4f}")
-    else:
-        filtered_scores = []
+    # Step 7: Display top results
+    print("\nTop PIN candidates (trajectory matching only):")
+    for pin, score in pin_scores[:min(10, len(pin_scores))]:
+        print(f"  {pin}: {score:.4f}")
     
-    # Step 11: Plot trajectory on PIN pad for top candidates
-    if best_centers_ordered is not None and len(best_centers_ordered) > 0 and filtered_scores:
+    # Step 8: Plot trajectory on PIN pad for top candidates
+    if best_centers_ordered is not None and len(best_centers_ordered) > 0:
+        title = 'Time-Aware Trajectory Matching'
+            
         plot_trajectory_on_pinpad(
-            best_centers_ordered, filtered_scores[:5] if filtered_scores else [],
+            best_centers_ordered, pin_scores[:5] if pin_scores else [],
             os.path.join(video_dir, 'trajectory_mapping.png'),
-            f'Trajectory Matching: Top PIN {filtered_scores[0][0] if filtered_scores else "N/A"}'
+            f'{title}: Top PIN {pin_scores[0][0] if pin_scores else "N/A"}'
         )
     
-    return filtered_scores
+    return pin_scores, is_same_digit
 
 def main():
     """Main function to process all CSV files"""
@@ -980,17 +761,19 @@ def main():
     print(f"Found {total} *_ring_center.csv files.")
     
     results = {}
+    pattern_info = {}
     video_reports = {}
     
     for idx, csv_path in enumerate(csv_files, 1):
         print(f"Processing {idx}/{total}: {csv_path}")
         video_name = os.path.basename(os.path.dirname(csv_path))
         try:
-            pin_scores = process_csv_trajectory(csv_path, report_dir)
+            pin_scores, is_same_digit = process_csv_trajectory(csv_path, report_dir)
             if pin_scores:
                 results[video_name] = pin_scores
+                pattern_info[video_name] = is_same_digit
                 # Generate individual HTML report for this video
-                report_filename = generate_individual_html_report(video_name, pin_scores, report_dir)
+                report_filename = generate_individual_html_report(video_name, pin_scores, is_same_digit, report_dir)
                 video_reports[video_name] = report_filename
         except Exception as e:
             print(f"Error processing file {idx}: {e}")
@@ -998,7 +781,7 @@ def main():
             traceback.print_exc()
     
     # Generate main HTML report with links to individual reports
-    generate_main_html_report(results, report_dir, video_reports)
+    generate_main_html_report(results, pattern_info, report_dir, video_reports)
     
     # Open the HTML report in the default browser
     main_report_path = os.path.join(report_dir, 'index.html')
