@@ -678,7 +678,7 @@ def process_csv_trajectory(csv_path, report_dir):
     pin_scores = []
     
     # Process all possible 4-digit PINs
-    for pin in [''.join(p) for p in product(PINPAD_DIGITS, repeat=PIN_LENGTH)]:
+    for pin in [''.join(p) for p in product(PINPAD_DIGITS, repeat=PIN_LENGTH)]:        
         try:
             pin_indices = [PINPAD_DIGIT_TO_IDX[d] for d in pin]
             pin_coords = PINPAD_COORDS[pin_indices]
@@ -711,7 +711,7 @@ def process_csv_trajectory(csv_path, report_dir):
         
         for i, (_, score) in enumerate(pin_scores[1:], 1):
             # If score jumps by more than 20% of the best score or 0.05 absolute
-            jump_threshold = max(0.05, score_range * 0.20)
+            jump_threshold = max(0.05, score_range * 0.20)  # defualt 0.05   0.20
             if score - last_score > jump_threshold:
                 jump_idx = i
                 break
@@ -726,7 +726,7 @@ def process_csv_trajectory(csv_path, report_dir):
         stat_idx = next((i for i, (_, s) in enumerate(pin_scores) if s > stat_threshold), len(pin_scores))
         
         # 4. Hard minimum threshold - always show at least 10 candidates
-        min_candidates = 10
+        min_candidates = 1000
         
         # Take the minimum of all approaches, but ensure minimum count
         cutoff_idx = max(min_candidates, min(jump_idx, absolute_idx, stat_idx))
