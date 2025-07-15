@@ -31,9 +31,8 @@ def run_script(script_name):
     return True
 
 def main():
-    """Run track.py, plots.py, and guess.py in sequence."""
     # Check if scripts exist
-    scripts = ["track.py", "plots.py", "guess.py"]
+    scripts = ["track2.py", "plots.py", "guess2.py"]
     for script in scripts:
         if not os.path.exists(script):
             print(f"Error: {script} not found in the current directory")
@@ -42,20 +41,20 @@ def main():
     print("Starting sequential execution of scripts...")
     
     # Run scripts in sequence
-    if run_script("track.py"):
+    if run_script("track2.py"):
         time.sleep(1)  # Brief pause between scripts
         
         if run_script("plots.py"):
             time.sleep(1)  # Brief pause between scripts
             
-            if run_script("guess.py"):
+            if run_script("guess2.py"):
                 print("\n🎉 All scripts executed successfully!")
             else:
-                print("\n❌ Script sequence stopped at guess.py")
+                print("\n❌ Script sequence stopped at guess2.py")
         else:
             print("\n❌ Script sequence stopped at plots.py")
     else:
-        print("\n❌ Script sequence stopped at track.py")
+        print("\n❌ Script sequence stopped at track2.py")
 
 if __name__ == "__main__":
     main()
