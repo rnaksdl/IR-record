@@ -7,8 +7,8 @@ from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 from scipy.signal import savgol_filter
 
-input_folder = './jitter_vid'
-output_folder = 'output'
+input_folder = './input'
+output_folder = './jitter_out'
 os.makedirs(output_folder, exist_ok=True)
 
 def detect_leds_with_blue_or_purple_halo(image):
