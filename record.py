@@ -27,9 +27,11 @@ video_config = picam2.create_video_configuration(
     main={"size": (1280, 720)},  # Lower resolution for testing
     controls={
         "Brightness": -1.0,  # -1 to 1 (0 default)
-        "Contrast": 1.0,     # 0 to 32 (1 default)
-        "Saturation": 1.0,   # 0 to 32 (1 default)
-        "Sharpness": 16.0    # 0 to 16 (1 default)
+        "AeEnable": False,   # Auto Exposure off
+        "AnalogueGain": 1.0 # 1 to 16
+        # "Contrast": 1.0,     # 0 to 32 (1 default)
+        # "Saturation": 1.0,   # 0 to 32 (1 default)
+        # "Sharpness": 16.0    # 0 to 16 (1 default)
     },
     transform=Transform(hflip=1)
 )
