@@ -7,3 +7,4 @@
 /plots/
 plots_log.txt
 /pin_trajectories
+/pin_trajectories/*.pkl
