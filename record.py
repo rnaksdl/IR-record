@@ -47,7 +47,6 @@ camera_started = True  # Track if camera is started
 temp_filename = ""
 start_time = 0
 stop_thread = threading.Event()
-duration_thread = None
 
 # Gamma correction function
 def apply_gamma_correction(frame, gamma=0.5):
@@ -68,11 +67,6 @@ def process_frame(frame):
     # Mask non-light areas
     frame = mask_non_light_areas(frame, threshold=200)
     return frame
-
-def display_duration():
-    # Function kept for timing purposes but doesn't display anything
-    while recording and not stop_thread.is_set():
-        time.sleep(0.1)
 
 def convert_to_mp4(h264_path, mp4_path, fps=30):
     print(f"Converting {h264_path} to {mp4_path} using ffmpeg...")
@@ -99,15 +93,17 @@ try:
         command = input("> ")
         
         if command == "1" and not recording:
+            print("Starting recording in...")
+            for i in range(3, 0, -1):
+                print(f"{i}...")
+                time.sleep(1)
+            
             temp_filename = f"{output_folder}/temp_recording.h264"
             picam2.start_recording(encoder, FileOutput(temp_filename))
             recording = True
             stop_thread.clear()
             start_time = time.time()
-            print("Recording started...")
-
-            duration_thread = threading.Thread(target=display_duration, daemon=True)
-            duration_thread.start()
+            print("Recording started!")
             
         elif command == "2" and recording:
             try:
@@ -116,8 +112,6 @@ try:
                 pass
             recording = False
             stop_thread.set()
-            if duration_thread is not None:
-                duration_thread.join(timeout=1)
             
             actual_duration = time.time() - start_time
             seconds = int(actual_duration)
@@ -138,7 +132,10 @@ try:
                 os.remove(final_filename)
             print(f"Saved as {final_mp4}")
             
-            # No preview refresh - just continue with the existing preview
+            # Ensure the preview is still running
+            if not picam2.preview_active:
+                picam2.start_preview(True)
+                print("Preview restarted")
             
         elif command == "3":
             if recording:
@@ -148,8 +145,6 @@ try:
                     pass
                 recording = False
                 stop_thread.set()
-                if duration_thread is not None:
-                    duration_thread.join(timeout=1)
             print("Exiting...")
             break
             
@@ -167,8 +162,6 @@ finally:
             pass
         recording = False
         stop_thread.set()
-        if duration_thread is not None:
-            duration_thread.join(timeout=1)
 
     # Stop preview before stopping camera
     try:
