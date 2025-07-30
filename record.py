@@ -138,12 +138,7 @@ try:
                 os.remove(final_filename)
             print(f"Saved as {final_mp4}")
             
-            # Refresh the preview
-            try:
-                picam2.stop_preview()
-                picam2.start_preview(True)
-            except Exception as e:
-                print(f"Error refreshing preview: {e}")
+            # No preview refresh - just continue with the existing preview
             
         elif command == "3":
             if recording:
