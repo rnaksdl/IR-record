@@ -26,7 +26,7 @@ picam2 = Picamera2()
 video_config = picam2.create_video_configuration(
     main={"size": (1280, 720)},  # Lower resolution for testing
     controls={
-        "Brightness": -1.0,  # -1 to 1 (0 default)
+        "Brightness": -1,  # -1 to 1 (0 default)
         "AeEnable": False,   # Auto Exposure off
         "AnalogueGain": 1.0 # 1 to 16
         # "Contrast": 1.0,     # 0 to 32 (1 default)
@@ -70,10 +70,8 @@ def process_frame(frame):
     return frame
 
 def display_duration():
+    # Function kept for timing purposes but doesn't display anything
     while recording and not stop_thread.is_set():
-        elapsed = time.time() - start_time
-        sys.stdout.write(f"\rRecording duration: {elapsed:.1f}s")
-        sys.stdout.flush()
         time.sleep(0.1)
 
 def convert_to_mp4(h264_path, mp4_path, fps=30):
@@ -112,7 +110,6 @@ try:
             duration_thread.start()
             
         elif command == "2" and recording:
-            sys.stdout.write("\n")
             try:
                 picam2.stop_recording()
             except Exception:
@@ -132,7 +129,6 @@ try:
             final_mp4 = f"{output_folder}/{timestamp}_{duration_str}.mp4"
             
             shutil.move(temp_filename, final_filename)
-            # print(f"Saved as {final_filename}")  # <-- Commented out, don't print .h264 filename
 
             # Convert to mp4
             convert_to_mp4(final_filename, final_mp4, fps=30)
@@ -141,11 +137,16 @@ try:
             if os.path.exists(final_filename):
                 os.remove(final_filename)
             print(f"Saved as {final_mp4}")
-
+            
+            # Refresh the preview
+            try:
+                picam2.stop_preview()
+                picam2.start_preview(True)
+            except Exception as e:
+                print(f"Error refreshing preview: {e}")
             
         elif command == "3":
             if recording:
-                sys.stdout.write("\n")
                 try:
                     picam2.stop_recording()
                 except Exception:
