@@ -47,8 +47,6 @@ camera_started = True  # Track if camera is started
 temp_filename = ""
 start_time = 0
 stop_thread = threading.Event()
-countdown_active = False
-countdown_thread = None
 
 # Gamma correction function
 def apply_gamma_correction(frame, gamma=0.5):
@@ -84,22 +82,6 @@ def convert_to_mp4(h264_path, mp4_path, fps=30):
     except subprocess.CalledProcessError as e:
         print(f"ffmpeg conversion failed: {e}")
 
-def countdown_and_record():
-    global recording, start_time, countdown_active
-    
-    countdown_active = True
-    for i in range(3, 0, -1):
-        print(f"{i}...")
-        sys.stdout.flush()  # Ensure output is displayed immediately
-        time.sleep(1)
-    
-    temp_filename = f"{output_folder}/temp_recording.h264"
-    picam2.start_recording(encoder, FileOutput(temp_filename))
-    recording = True
-    start_time = time.time()
-    countdown_active = False
-    print("Recording started!")
-
 print("Recording System (720p@30fps, Preview ON)")
 print("Commands:")
 print("  1 - Start recording")
@@ -110,11 +92,13 @@ try:
     while True:
         command = input("> ")
         
-        if command == "1" and not recording and not countdown_active:
-            print("Starting recording in...")
-            # Start countdown in a separate thread to keep preview active
-            countdown_thread = threading.Thread(target=countdown_and_record)
-            countdown_thread.start()
+        if command == "1" and not recording:
+            temp_filename = f"{output_folder}/temp_recording.h264"
+            picam2.start_recording(encoder, FileOutput(temp_filename))
+            recording = True
+            stop_thread.clear()
+            start_time = time.time()
+            print("Recording started...")
             
         elif command == "2" and recording:
             try:
@@ -122,6 +106,7 @@ try:
             except Exception:
                 pass
             recording = False
+            stop_thread.set()
             
             actual_duration = time.time() - start_time
             seconds = int(actual_duration)
@@ -141,7 +126,6 @@ try:
             if os.path.exists(final_filename):
                 os.remove(final_filename)
             print(f"Saved as {final_mp4}")
-            print("Preview continues - ready for next recording")
             
         elif command == "3":
             if recording:
@@ -150,10 +134,7 @@ try:
                 except Exception:
                     pass
                 recording = False
-            if countdown_active and countdown_thread and countdown_thread.is_alive():
-                print("Canceling countdown...")
-                countdown_active = False
-                countdown_thread.join(timeout=1)
+                stop_thread.set()
             print("Exiting...")
             break
             
@@ -170,6 +151,7 @@ finally:
         except Exception:
             pass
         recording = False
+        stop_thread.set()
 
     # Stop preview before stopping camera
     try:
